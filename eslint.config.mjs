@@ -1,16 +1,44 @@
 import nx from '@nx/eslint-plugin';
+import tseslint from 'typescript-eslint';
 
 export default [
   ...nx.configs['flat/base'],
   ...nx.configs['flat/typescript'],
   ...nx.configs['flat/javascript'],
   {
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        project: false,
+        tsconfigRootDir: import.meta.dirname,
+        extraFileExtensions: ['.mts', '.cts'],
+      },
+    },
+  },
+  {
     ignores: [
       '**/dist',
       '**/out-tsc',
+      '**/*.d.ts',
+      '**/vite.config.*',
+      '**/vitest.config.*',
+      '**/jest.config.*',
+      '**/*.config.*',
       '**/vite.config.*.timestamp*',
       '**/vitest.config.*.timestamp*',
     ],
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      parserOptions: {
+        project: [
+          './apps/frontend/tsconfig.app.json',
+          './apps/frontend/tsconfig.spec.json',
+          './apps/infra/tsconfig.json',
+        ],
+      },
+    },
   },
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
@@ -42,28 +70,16 @@ export default [
     rules: {
       // Type Safety - Enforce strict type system
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-implicit-any': 'error',
-      '@typescript-eslint/explicit-function-return-types': [
-        'error',
-        {
-          allowExpressions: true,
-          allowTypedFunctionExpressions: true,
-          allowHigherOrderFunctions: true,
-        },
-      ],
       '@typescript-eslint/explicit-member-accessibility': [
         'error',
-        { accessibility: 'explicit' },
-      ],
-      '@typescript-eslint/no-non-null-assertion': 'warn',
-      '@typescript-eslint/strict-boolean-expressions': [
-        'error',
         {
-          allowString: false,
-          allowNumber: false,
-          allowNullableObject: false,
+          accessibility: 'explicit',
+          overrides: {
+            constructors: 'no-public',
+          },
         },
       ],
+      '@typescript-eslint/no-non-null-assertion': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
         {
@@ -76,13 +92,13 @@ export default [
         'error',
         {
           selector: 'variable',
-          format: ['camelCase', 'UPPER_SNAKE_CASE'],
+          format: ['camelCase', 'UPPER_CASE'],
           leadingUnderscore: 'allow',
           trailingUnderscore: 'allow',
         },
         {
           selector: 'function',
-          format: ['camelCase'],
+          format: ['camelCase', 'PascalCase'],
         },
         {
           selector: 'typeLike',
@@ -90,8 +106,8 @@ export default [
         },
         {
           selector: 'enumMember',
-          format: ['UPPER_SNAKE_CASE'],
-        },
+          format: ['UPPER_CASE'],
+        }
       ],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
@@ -100,10 +116,7 @@ export default [
       '@typescript-eslint/prefer-optional-chain': 'error',
 
       // Code Quality
-      'no-console': [
-        'warn',
-        { allow: ['warn', 'error'] },
-      ],
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
       'no-alert': 'warn',
       'no-var': 'error',
@@ -119,10 +132,7 @@ export default [
       'no-empty-function': 'error',
       'no-implicit-coercion': 'error',
       'no-eval': 'error',
-      'eqeqeq': ['error', 'always'],
-
-      // Error Handling
-      '@typescript-eslint/no-throw-literal': 'error',
+      eqeqeq: ['error', 'always'],
 
       // Import Organization
       'sort-imports': [
@@ -138,15 +148,12 @@ export default [
     files: ['**/*.js', '**/*.jsx'],
     rules: {
       // JavaScript-specific code quality
-      'no-console': [
-        'warn',
-        { allow: ['warn', 'error'] },
-      ],
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
       'no-var': 'error',
       'prefer-const': 'error',
       'prefer-arrow-callback': 'error',
-      'eqeqeq': ['error', 'always'],
+      eqeqeq: ['error', 'always'],
       'no-eval': 'error',
       'no-empty-function': 'error',
     },

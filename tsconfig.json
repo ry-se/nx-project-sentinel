@@ -2,6 +2,10 @@
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
   "files": [],
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+  ],
   "references": [
     {
       "path": "./apps/frontend"
