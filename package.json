@@ -2,13 +2,14 @@
   "name": "@org/source",
   "version": "0.0.0",
   "license": "MIT",
+  
   "scripts": {
-    "dev": "nx run-many --target=serve --projects=frontend,backend --parallel",
-    "build": "nx run-many --target=build --all",
-    "lint": "nx run-many --target=lint --all",
-    "test": "nx run-many --target=test --all",
-    "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down"
+    "lint": "nx lint",
+    "test": "nx test",
+    "build": "nx build",
+    "affected:build": "nx affected -t build",
+    "affected:test": "nx affected -t test",
+    "docker:build": "nx run-many -t docker-build --all"
   },
   "private": true,
   "devDependencies": {

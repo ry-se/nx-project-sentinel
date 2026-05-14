@@ -7,11 +7,12 @@ export default defineConfig(() => ({
   cacheDir: '../node_modules/.vite/frontend',
   server: {
     port: 4200,
-    host: 'localhost',
+    host: '0.0.0.0',
+    allowedHosts: ['localhost', 'frontend'],
   },
   preview: {
     port: 4200,
-    host: 'localhost',
+    host: '0.0.0.0',
   },
   plugins: [react()],
   // Uncomment this if you are using workers.

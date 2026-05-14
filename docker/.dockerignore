@@ -1,0 +1,29 @@
+node_modules
+dist
+build
+.out
+.next
+.vite
+
+# NX cache
+.nx
+tmp
+
+# Python
+__pycache__
+*.pyc
+.venv
+venv
+
+# Git
+.git
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Docker
+Dockerfile
+docker-compose.yml

@@ -22,7 +22,14 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/backend",
-        "command": "pytest"
+        "command": ".venv\\Scripts\\activate -m pytest"
+      }
+    },
+    "docker-build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": ".",
+        "command": "docker build -f docker/backend.DockerFile ."
       }
     }
   }

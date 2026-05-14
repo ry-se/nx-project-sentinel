@@ -31,6 +31,12 @@ export default [
     },
   },
   {
+    files: ['apps/infra/**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      '@nx/enforce-module-boundaries': 'off',
+    },
+  },
+  {
     files: [
       '**/*.ts',
       '**/*.tsx',
