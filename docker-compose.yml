@@ -42,21 +42,6 @@ services:
       - sentinel-network
     restart: unless-stopped
 
-  database:
-    image: postgres:16-alpine
-    container_name: sentinel-db
-    environment:
-      - POSTGRES_USER=sentinel
-      - POSTGRES_PASSWORD=sentinel
-      - POSTGRES_DB=sentinel
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-
 volumes:
   postgres_data:
 
