@@ -8,7 +8,7 @@
     "build": "nx build",
     "affected:build": "nx affected -t build",
     "affected:test": "nx affected -t test",
-    "docker:build": "nx run-many -t build --all"
+    "docker:build": "nx run-many -t docker-build --all"
   },
   "private": true,
   "devDependencies": {

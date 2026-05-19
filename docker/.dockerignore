@@ -15,10 +15,6 @@ __pycache__
 .venv
 venv
 
-# Unused workspace packages
-packages/*
-!packages/.gitkeep
-
 # Git & CI
 .git
 .github

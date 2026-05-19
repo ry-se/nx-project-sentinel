@@ -18,7 +18,7 @@
         "command": ".venv\\Scripts\\activate -m pytest"
       }
     },
-    "build": {
+    "docker-build": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": ".",
