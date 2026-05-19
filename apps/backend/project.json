@@ -8,14 +8,7 @@
       "continuous": true,
       "options": {
         "cwd": "apps/backend",
-        "command": "uvicorn app.main:app --reload --port 8000"
-      }
-    },
-    "install": {
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": "apps/backend",
-        "command": "pip install -r requirements.txt"
+        "command": ".venv\\Scripts\\uvicorn app.main:app --reload --port 8000"
       }
     },
     "test": {
@@ -25,12 +18,12 @@
         "command": ".venv\\Scripts\\activate -m pytest"
       }
     },
-    "docker-build": {
+    "build": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": ".",
-        "command": "docker build -f docker/backend.DockerFile ."
+        "command": "docker build -t sentinel-backend -f docker/backend.DockerFile ."
       }
     }
-  }
+}
 }

@@ -13,6 +13,14 @@
     ],
     "sharedGlobals": []
   },
+  "tasksRunnerOptions": {
+    "default": {
+      "runner": "nx-cloud",
+      "options": {
+        "cacheableOperations": ["build", "test", "lint"]
+      }
+    }
+  },
   "plugins": [
     {
       "plugin": "@nx/js/typescript",

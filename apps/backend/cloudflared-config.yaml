@@ -1,0 +1,7 @@
+tunnel:
+credential-file:
+
+ingress:
+  - hostname: sentinel.dscc.dev
+    service: http://backend:8000
+  - service: http_status:404

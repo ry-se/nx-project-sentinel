@@ -35,6 +35,22 @@ jobs:
 
       - run: npm ci
 
+      - name: Nx Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nx
+          key: ${{ runner.os }}-nx-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-nx-
+
+      - name: Lint & Type Check
+        run: npx nx lint frontend && npx nx typecheck frontend
+
+      - name: Run Tests
+        run: npx nx test frontend
+
+      - name: Build
+        run: npx nx build frontend --prod
+
       # Prepend any command with "nx record --" to record its logs to Nx Cloud
       - run: npx nx record -- npx nx format:check  --base="remotes/origin/main"
       - run: npx nx affected -t lint test build typecheck

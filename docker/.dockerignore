@@ -15,15 +15,26 @@ __pycache__
 .venv
 venv
 
-# Git
+# Unused workspace packages
+packages/*
+!packages/.gitkeep
+
+# Git & CI
 .git
+.github
+.gitignore
 
 # Logs
 *.log
-
-# OS
 .DS_Store
 
 # Docker
 Dockerfile
 docker-compose.yml
+
+# Test files
+**/*.spec.ts
+**/*.spec.tsx
+**/*.test.ts
+**/*.test.tsx
+**/*.snap
