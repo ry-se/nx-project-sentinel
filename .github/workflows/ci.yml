@@ -49,15 +49,11 @@ jobs:
 
       - name: Check formatting
         run: |
-          npx nx record -- \
-          npx nx format:check --base=origin/main
+          npx nx record -- npx nx format:check --base=origin/main
 
       - name: Run affected tasks
         run: |
-          npx nx affected \
-            -t lint,test,build,typecheck \
-            --base=origin/main \
-            --head=HEAD
+          npx nx affected -t lint,test,build,typecheck --base=origin/main --head=HEAD
 
       - name: Fix CI suggestions
         if: always()
