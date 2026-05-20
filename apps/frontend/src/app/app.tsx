@@ -11,7 +11,7 @@ export function App() {
       try {
         const res = await fetch('/api/');
         const data = await res.json();
-        console.error(data)
+        console.error(data);
         setData(data.message);
       } catch (err) {
         console.error(err);
