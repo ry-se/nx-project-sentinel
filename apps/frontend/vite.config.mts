@@ -2,15 +2,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
-import path from 'node:path';
-
-const cesiumSource = path.resolve(
-  import.meta.dirname,
-  '../../node_modules/cesium/Build/Cesium'
-);
-
-const cesiumBaseUrl = 'cesium';
 
 export default defineConfig({
   root: import.meta.dirname,
@@ -34,26 +25,6 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    // viteStaticCopy({
-    //   targets: [
-    //     {
-    //       src: path.join(cesiumSource, 'Workers'),
-    //       dest: cesiumBaseUrl,
-    //     },
-    //     {
-    //       src: path.join(cesiumSource, 'ThirdParty'),
-    //       dest: cesiumBaseUrl,
-    //     },
-    //     {
-    //       src: path.join(cesiumSource, 'Assets'),
-    //       dest: cesiumBaseUrl,
-    //     },
-    //     {
-    //       src: path.join(cesiumSource, 'Widgets'),
-    //       dest: cesiumBaseUrl,
-    //     },
-    //   ],
-    // }),
   ],
 
   build: {
