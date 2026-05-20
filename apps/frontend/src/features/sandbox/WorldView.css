@@ -1,0 +1,12 @@
+/* WorldView.css */
+.cesium-container {
+  width: 100%;
+  height: 100vh; /* or fixed height like 600px */
+  position: relative;
+}
+
+/* Ensure the Viewer canvas fills its container */
+.cesium-container > div {
+  width: 100%;
+  height: 100%;
+}

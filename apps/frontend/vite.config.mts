@@ -1,33 +1,70 @@
-/// <reference types='vitest' />
+/// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
+import path from 'node:path';
+
+const cesiumSource = path.resolve(
+  import.meta.dirname,
+  '../../node_modules/cesium/Build/Cesium'
+);
+
+const cesiumBaseUrl = 'cesium';
 
 export default defineConfig({
   root: import.meta.dirname,
-  cacheDir: '../node_modules/.vite/frontend',
+  cacheDir: '../../node_modules/.vite/frontend',
+
+  define: {
+    CESIUM_BASE_URL: JSON.stringify(`/cesium`),
+  },
+
   server: {
     port: 4200,
     host: '0.0.0.0',
     allowedHosts: ['localhost', 'frontend'],
   },
+
   preview: {
     port: 4200,
     host: '0.0.0.0',
   },
-  plugins: [react(), tailwindcss()],
-  // Uncomment this if you are using workers.
-  // worker: {
-  //  plugins: [],
-  // },
+
+  plugins: [
+    react(),
+    tailwindcss(),
+    // viteStaticCopy({
+    //   targets: [
+    //     {
+    //       src: path.join(cesiumSource, 'Workers'),
+    //       dest: cesiumBaseUrl,
+    //     },
+    //     {
+    //       src: path.join(cesiumSource, 'ThirdParty'),
+    //       dest: cesiumBaseUrl,
+    //     },
+    //     {
+    //       src: path.join(cesiumSource, 'Assets'),
+    //       dest: cesiumBaseUrl,
+    //     },
+    //     {
+    //       src: path.join(cesiumSource, 'Widgets'),
+    //       dest: cesiumBaseUrl,
+    //     },
+    //   ],
+    // }),
+  ],
+
   build: {
-    outDir: './dist',
+    outDir: '../../dist/apps/frontend',
     emptyOutDir: true,
     reportCompressedSize: true,
     commonjsOptions: {
       transformMixedEsModules: true,
     },
   },
+
   test: {
     name: '@org/frontend',
     watch: false,
