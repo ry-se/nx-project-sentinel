@@ -3,12 +3,16 @@ import { BrowserRouter } from 'react-router-dom';
 
 import App from './app';
 
+vi.mock('../features/sandbox/WorldView', () => ({
+  WorldView: () => <div data-testid="world-view-mock" />,
+}));
+
 describe('App', () => {
   it('should render successfully', () => {
     const { baseElement } = render(
       <BrowserRouter>
         <App />
-      </BrowserRouter>,
+      </BrowserRouter>
     );
     expect(baseElement).toBeTruthy();
   });
@@ -17,10 +21,8 @@ describe('App', () => {
     const { getAllByText } = render(
       <BrowserRouter>
         <App />
-      </BrowserRouter>,
+      </BrowserRouter>
     );
-    expect(
-      getAllByText(new RegExp('Welcome @org/frontend', 'gi')).length > 0,
-    ).toBeTruthy();
+    expect(getAllByText(new RegExp('The data returned is', 'gi')).length > 0).toBeTruthy();
   });
 });
