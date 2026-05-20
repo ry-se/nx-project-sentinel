@@ -25,7 +25,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 
   build: {
-    outDir: '../../dist/apps/frontend',
+    outDir: './dist/apps/frontend',
     emptyOutDir: true,
     reportCompressedSize: true,
     commonjsOptions: {

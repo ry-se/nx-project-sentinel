@@ -15,7 +15,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/backend",
-        "command": ".venv\\Scripts\\activate -m pytest"
+        "command": "python -m pytest"
       }
     },
     "docker-build": {
