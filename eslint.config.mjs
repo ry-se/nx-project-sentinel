@@ -26,6 +26,7 @@ export default [
       '**/*.config.*',
       '**/vite.config.*.timestamp*',
       '**/vitest.config.*.timestamp*',
+      '**/public',
     ],
   },
   {
@@ -107,7 +108,7 @@ export default [
         {
           selector: 'enumMember',
           format: ['UPPER_CASE'],
-        }
+        },
       ],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
