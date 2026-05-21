@@ -8,14 +8,21 @@
       "continuous": true,
       "options": {
         "cwd": "apps/backend",
-        "command": ".venv\\Scripts\\uvicorn app.main:app --reload --port 8000"
+        "command": "node -e \"require('../../tools/python-server').python\" && python -m uvicorn app.main:app --reload --port 8000"
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/backend",
-        "command": "python -m pytest"
+        "command": "node tools/python-tester.js"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/backend",
+        "command": "node tools/python-linter.js"
       }
     },
     "docker-build": {
@@ -25,5 +32,5 @@
         "command": "docker build -t sentinel-backend -f docker/backend.DockerFile ."
       }
     }
-}
+  }
 }
