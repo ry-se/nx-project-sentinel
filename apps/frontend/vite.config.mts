@@ -7,10 +7,6 @@ export default defineConfig({
   root: import.meta.dirname,
   cacheDir: '../../node_modules/.vite/frontend',
 
-  define: {
-    CESIUM_BASE_URL: JSON.stringify(`/cesium`),
-  },
-
   server: {
     port: 4200,
     host: '0.0.0.0',

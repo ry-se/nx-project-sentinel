@@ -1,4 +1,8 @@
+import { SPAWN_LOCATIONS, getStoredSpawnKey, setStoredSpawnKey } from '../features/sandbox/spawnLocations';
+import { useState } from 'react';
+
 export function NavBar() {
+  const [spawn, setSpawn] = useState(getStoredSpawnKey());
   return (
     <div style={{ width: '100vw' }} className="fixed top-0 left-0 right-0 z-50 px-4 pt-3">
       <div className="navbar bg-base-100 shadow-md rounded-box min-h-0 py-2 px-3">
@@ -22,7 +26,7 @@ export function NavBar() {
         </div>
 
         {/* Right: Actions */}
-        <div className="navbar-end gap-1">
+        <div className="navbar-end gap-1 items-center">
           <button className="btn btn-sm btn-ghost flex items-center gap-1.5 text-red-500 hover:bg-red-50">
             <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
             <span className="font-medium">Detections</span>
@@ -36,6 +40,26 @@ export function NavBar() {
           <button className="btn btn-sm btn-ghost font-normal">Wargame</button>
           <button className="btn btn-sm btn-ghost font-normal">Terrain</button>
           <button className="btn btn-sm btn-ghost font-normal">Replay</button>
+
+          <div className="divider divider-horizontal mx-0" />
+
+          <div className="mr-2">
+            <select
+              className="select select-sm select-bordered"
+              value={spawn}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSpawn(v);
+                setStoredSpawnKey(v);
+              }}
+            >
+              {SPAWN_LOCATIONS.map((loc) => (
+                <option key={loc.key} value={loc.key}>
+                  {loc.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="divider divider-horizontal mx-0" />
 

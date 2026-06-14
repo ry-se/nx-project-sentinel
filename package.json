@@ -31,7 +31,7 @@
     "@types/node": "20.19.9",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "~4.1.0",
     "@vitest/ui": "~4.1.0",
     "eslint": "^9.8.0",
@@ -49,21 +49,22 @@
     "typescript-eslint": "^8.40.0",
     "vite": "^8.0.0",
     "vite-plugin-static-copy": "^4.1.0",
-    "vitest": "~4.1.0"
+    "vitest": "~4.1.0",
+    "@types/three": "^0.184.1"
   },
   "workspaces": [
     "packages/*",
     "frontend"
   ],
   "dependencies": {
+    "3d-tiles-renderer": "^0.4.28",
     "@tailwindcss/vite": "^4.3.0",
-    "cesium": "^1.141.0",
     "daisyui": "^5.5.20",
     "dotenv": "^17.4.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "6.30.3",
-    "resium": "^1.21.1",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.0",
+    "three": "^0.184.0"
   }
 }
