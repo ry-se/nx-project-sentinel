@@ -16,9 +16,7 @@
   "tasksRunnerOptions": {
     "default": {
       "runner": "nx-cloud",
-      "options": {
-        "cacheableOperations": ["build", "test", "lint"]
-      }
+      "options": { "cacheableOperations": ["build", "test", "lint"] }
     }
   },
   "plugins": [
@@ -54,7 +52,7 @@
       "options": { "testTargetName": "test", "ciTargetName": "test-ci", "testMode": "watch" }
     }
   ],
-  "nxCloudId": "6a05654696f1ca8dc7c6703f",
+  "nxCloudId": "6a2e286c1135836618b81a27",
   "analytics": false,
   "targetDefaults": {
     "build": { "dependsOn": ["^build"], "inputs": ["production", "^production"], "cache": true },
