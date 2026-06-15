@@ -141,8 +141,8 @@ const STATE_LABEL: Record<SpiderState, string> = {
 }
 
 export class SpiderVehicle extends Vehicle {
-  readonly label = 'SPIDER'
-  readonly cameraDist = 14 // close camera — speed feels 3x faster
+  public readonly label = 'SPIDER'
+  public readonly cameraDist = 14 // close camera — speed feels 3x faster
   // fireCooldown stays 0 → VehicleManager never fires on SPACE. SPACE is ours.
 
   private vel = new Vector3()
@@ -233,12 +233,12 @@ export class SpiderVehicle extends Vehicle {
 
   /** Fed by the follow camera each frame (createSandbox) so ground movement
    * is relative to where the camera points, not a stored heading. */
-  setCameraYaw(yaw: number): void {
+  public setCameraYaw(yaw: number): void {
     this.cameraYaw = yaw
   }
 
   /** Reset state when (re)selected. Called by VehicleManager.switchTo. */
-  onSpawn(): void {
+  public onSpawn(): void {
     this.vel.set(0, 0, 0)
     this.spiderState = 'air'
     this.attachCooldown = 0
@@ -263,7 +263,7 @@ export class SpiderVehicle extends Vehicle {
     this.object.rotation.set(0, 0, 0)
   }
 
-  update(dt: number, terrain: Object3D): void {
+  public override update(dt: number, terrain: Object3D): void {
     const space = this.keys.has(' ')
     const shift = this.keys.has('shift')
     const w = this.keys.has('w')
@@ -1139,7 +1139,7 @@ export class SpiderVehicle extends Vehicle {
       this.flingCount >= 2 && this.orientWeb(this.flingWebB, this.flingAnchorB)
   }
 
-  override get state(): VehicleState {
+  public override get state(): VehicleState {
     return {
       label: this.label,
       speed: this._speed,

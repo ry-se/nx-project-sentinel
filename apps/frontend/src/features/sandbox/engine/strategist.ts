@@ -31,9 +31,9 @@ interface Feature {
 }
 
 export class StrategistController {
-  enabled = false
-  tool: StratTool = 'select'
-  onStatus: (text: string) => void = () => {}
+  public enabled = false
+  public tool: StratTool = 'select'
+  public onStatus: (text: string) => void = () => {}
 
   private camera: PerspectiveCamera
   private canvas: HTMLCanvasElement
@@ -81,7 +81,7 @@ export class StrategistController {
     })
   }
 
-  enable(center: Vector3): void {
+  public enable(center: Vector3): void {
     this.enabled = true
     this.pivot.copy(center)
     this.camera.position.set(center.x + 100, center.y + 500, center.z + 380)
@@ -89,18 +89,18 @@ export class StrategistController {
     this.setTool('select')
   }
 
-  disable(): void {
+  public disable(): void {
     this.enabled = false
     this.cancelDraft()
   }
 
-  setTool(tool: StratTool): void {
+  public setTool(tool: StratTool): void {
     this.cancelDraft()
     this.tool = tool
     this.onStatus(TOOL_HINTS[tool])
   }
 
-  clearAll(): void {
+  public clearAll(): void {
     this.cancelDraft()
     for (const f of this.features) this.featureRoot.remove(f.group)
     this.features = []
@@ -108,7 +108,7 @@ export class StrategistController {
     this.onStatus('All features cleared')
   }
 
-  get featureCount(): number {
+  public get featureCount(): number {
     return this.features.length
   }
 

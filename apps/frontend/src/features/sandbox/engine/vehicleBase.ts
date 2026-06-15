@@ -29,26 +29,26 @@ export interface BombDrop {
 }
 
 export abstract class Vehicle {
-  readonly object = new Group()
+  public readonly object = new Group()
   /** Filled by update(); VehicleManager drains each frame. */
-  readonly bombDrops: BombDrop[] = []
+  public readonly bombDrops: BombDrop[] = []
   protected keys: Set<string>
   protected raycaster = new Raycaster()
   protected _speed = 0
   protected _heading = 0
-  abstract readonly label: string
-  abstract readonly cameraDist: number
-  readonly fireCooldown: number = 0 // 0 = unarmed
+  public abstract readonly label: string
+  public abstract readonly cameraDist: number
+  public readonly fireCooldown: number = 0 // 0 = unarmed
 
   constructor(keys: Set<string>) {
     this.keys = keys
     ;(this.raycaster as unknown as { firstHitOnly: boolean }).firstHitOnly = true
   }
 
-  abstract update(dt: number, terrain: Object3D): void
+  public abstract update(dt: number, terrain: Object3D): void
 
   /** Muzzle origin + direction, or null if unarmed. */
-  fireRay(): { origin: Vector3; direction: Vector3; speed: number } | null {
+  public fireRay(): { origin: Vector3; direction: Vector3; speed: number } | null {
     return null
   }
 
@@ -74,11 +74,11 @@ export abstract class Vehicle {
     return hit ? hit.point.y : null
   }
 
-  get position(): Vector3 {
+  public get position(): Vector3 {
     return this.object.position
   }
 
-  get state(): VehicleState {
+  public get state(): VehicleState {
     return { label: this.label, speed: this._speed, heading: this._heading, altitude: null }
   }
 

@@ -16,7 +16,7 @@ export type { VehicleType, VehicleState, BombDrop } from './vehicleBase'
 class TankVehicle extends Vehicle {
   public readonly label = 'M1 TANK'
   public readonly cameraDist = 45
-  override readonly fireCooldown = 0.9
+  public override readonly fireCooldown = 0.9
   private grounded = false
 
   constructor(keys: Set<string>, lib: ModelLibrary) {
@@ -74,7 +74,7 @@ const ROLL_SPEED = (Math.PI * 2) / 1.1  // full barrel roll in 1.1 s
 class JetVehicle extends Vehicle {
   public readonly label = 'F-16 JET'
   public readonly cameraDist = 90
-  override readonly fireCooldown = 0.28
+  public override readonly fireCooldown = 0.28
   private pitch = 0
   private bank = 0
   private altitude = 0

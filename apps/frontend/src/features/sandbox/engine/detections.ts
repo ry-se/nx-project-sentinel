@@ -59,7 +59,7 @@ export class DetectionLayer {
     scene.add(this.root);
   }
 
-  spawn(localPos: Vector3, localYaw: number, cls: DetectionClass, name: string): void {
+  public spawn(localPos: Vector3, localYaw: number, cls: DetectionClass, name: string): void {
     const group = new Group();
     group.add(this.lib.instance(CLASS_TO_ASSET[cls], () => buildModel(cls), HOSTILE_RED));
 
@@ -79,11 +79,11 @@ export class DetectionLayer {
     this.root.add(group);
   }
 
-  clear(): void {
+  public clear(): void {
     this.root.clear();
   }
 
-  get count(): number {
+  public get count(): number {
     return this.root.children.length;
   }
 }

@@ -32,7 +32,7 @@ const KIND_ICON: Record<string, string> = {
  * photogrammetry surface by raycast.
  */
 export class LabelManager {
-  visible = true
+  public visible = true
 
   private root = new Group()
   private tiles: TilesRenderer
@@ -50,7 +50,7 @@ export class LabelManager {
 
   /** Fetch POIs and build sprites. Call once the root tileset has loaded
    *  (the reorientation transform must be in place). */
-  async load(centerLat: number, centerLon: number): Promise<void> {
+  public async load(centerLat: number, centerLon: number): Promise<void> {
     if (this.loaded) return
     this.loaded = true
 
@@ -85,7 +85,7 @@ export class LabelManager {
   }
 
   /** Per-frame: distance culling + lazy height clamping as tiles stream in. */
-  update(camera: PerspectiveCamera): void {
+  public update(camera: PerspectiveCamera): void {
     if (!this.visible) return
 
     const now = performance.now()
@@ -112,7 +112,7 @@ export class LabelManager {
     }
   }
 
-  setVisible(v: boolean): void {
+  public setVisible(v: boolean): void {
     this.visible = v
     this.root.visible = v
   }

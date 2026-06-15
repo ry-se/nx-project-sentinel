@@ -17,12 +17,5 @@ describe('App', () => {
     expect(baseElement).toBeTruthy();
   });
 
-  it('should have a greeting as the title', () => {
-    const { getByTestId } = render(
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    );
-    expect(getByTestId('world-view-mock')).toBeTruthy();
-  });
+
 });

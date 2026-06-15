@@ -55,7 +55,7 @@ export class ModelLibrary {
    * Returns a group immediately (containing the primitive fallback); when the
    * catalogue GLB finishes loading it is swapped in transparently.
    */
-  instance(id: string, fallback: () => Group, tintHex?: number): Group {
+  public instance(id: string, fallback: () => Group, tintHex?: number): Group {
     const holder = new Group();
     const fb = fallback();
     holder.add(fb);

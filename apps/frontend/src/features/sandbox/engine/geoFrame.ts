@@ -44,7 +44,7 @@ export class GeoFrame {
   }
 
   /** Local-frame position → WGS84 lat/lon/alt (degrees, metres). */
-  localToGeo(local: Vector3): GeoPosition {
+  public localToGeo(local: Vector3): GeoPosition {
     this.ensure();
     const ecef = local.clone().applyMatrix4(this.inverse);
     const target = { lat: 0, lon: 0, height: 0 };
@@ -57,7 +57,7 @@ export class GeoFrame {
   }
 
   /** True compass bearing (0–360°, 0 = north) of a local-frame direction. */
-  compassHeadingDeg(directionLocal: Vector3): number {
+  public compassHeadingDeg(directionLocal: Vector3): number {
     this.ensure();
     const e = directionLocal.dot(this.east);
     const n = directionLocal.dot(this.north);

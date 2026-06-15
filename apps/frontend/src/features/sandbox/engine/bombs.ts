@@ -385,7 +385,7 @@ export class BombManager {
     ;(this.rc as unknown as { firstHitOnly: boolean }).firstHitOnly = true
   }
 
-  drop(drop: BombDrop): void {
+  public drop(drop: BombDrop): void {
     const group = makeBombMesh()
     group.position.copy(drop.pos)
     group.traverse(o => o.layers.set(1))
@@ -396,7 +396,7 @@ export class BombManager {
   /**
    * Advance physics + VFX. Returns camera-shake magnitude (0 = no shake).
    */
-  update(dt: number, terrain: Object3D): number {
+  public update(dt: number, terrain: Object3D): number {
     let shake = 0
 
     // falling bombs
@@ -430,7 +430,7 @@ export class BombManager {
     return shake
   }
 
-  dispose(): void {
+  public dispose(): void {
     for (const b of this.active) this.scene.remove(b.group)
     this.active = []
     // craters and remaining meshes left in scene intentionally

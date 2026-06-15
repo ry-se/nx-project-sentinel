@@ -42,7 +42,7 @@ export class ViewshedController {
   }
 
   /** Aim the analysis wedge from observer toward target; range = distance. */
-  aim(observerGround: Vector3, targetGround: Vector3): void {
+  public aim(observerGround: Vector3, targetGround: Vector3): void {
     const obs = observerGround.clone()
     obs.y += EYE_HEIGHT
     const tgt = targetGround.clone()
@@ -70,19 +70,19 @@ export class ViewshedController {
     this.helper.visible = true
   }
 
-  disable(): void {
+  public disable(): void {
     this.enabled = false
     this.uniforms.uVsEnabled.value = 0
     if (this.helper) this.helper.visible = false
   }
 
-  get active(): boolean {
+  public get active(): boolean {
     return this.enabled
   }
 
   /** Re-render the observer depth map. Call once per frame while active —
    *  this keeps the analysis correct as higher-detail tiles stream in. */
-  update(renderer: WebGLRenderer): void {
+  public update(renderer: WebGLRenderer): void {
     if (!this.enabled) return
 
     const prevTarget = renderer.getRenderTarget()

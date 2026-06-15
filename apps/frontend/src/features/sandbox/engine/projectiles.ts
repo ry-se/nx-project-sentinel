@@ -47,7 +47,7 @@ export class ProjectileManager {
     this.scorchTexture = radialTexture('rgba(10,10,10,0.9)', 'rgba(20,20,20,0)')
   }
 
-  fire(origin: Vector3, direction: Vector3, speed: number): void {
+  public fire(origin: Vector3, direction: Vector3, speed: number): void {
     const mesh = new Mesh(this.shellGeo, this.shellMat)
     mesh.position.copy(origin)
     mesh.layers.set(1)
@@ -59,7 +59,7 @@ export class ProjectileManager {
     })
   }
 
-  update(dt: number): void {
+  public update(dt: number): void {
     // projectiles: integrate, segment-raycast for impact
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i]
@@ -110,7 +110,7 @@ export class ProjectileManager {
     }
   }
 
-  explode(at: Vector3, normal: Vector3): void {
+  public explode(at: Vector3, normal: Vector3): void {
     // flash
     this.spawnParticle(at, new Vector3(), 0.35, 26, this.fireTexture, true, 70)
     // fireball
