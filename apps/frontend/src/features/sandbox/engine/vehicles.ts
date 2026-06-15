@@ -14,8 +14,8 @@ export type { VehicleType, VehicleState, BombDrop } from './vehicleBase'
 // ---------- TANK ----------
 
 class TankVehicle extends Vehicle {
-  readonly label = 'M1 TANK'
-  readonly cameraDist = 45
+  public readonly label = 'M1 TANK'
+  public readonly cameraDist = 45
   override readonly fireCooldown = 0.9
   private grounded = false
 
@@ -24,7 +24,7 @@ class TankVehicle extends Vehicle {
     this.object.add(lib.instance('tank', buildTankPrimitive))
   }
 
-  update(dt: number, terrain: Object3D): void {
+  public override update(dt: number, terrain: Object3D): void {
     groundDrive(this, dt, terrain, {
       maxSpeed: 18, accel: 10, brake: 8, reverseFactor: 0.5,
       turnRate: 1.4, damping: 0.88, clearance: 0.9, maxClimb: 3,
@@ -32,7 +32,7 @@ class TankVehicle extends Vehicle {
     })
   }
 
-  override fireRay() {
+  public override fireRay() {
     const dir = this.forwardXZ()
     dir.y = 0.10
     const origin = this.position.clone()
@@ -45,8 +45,8 @@ class TankVehicle extends Vehicle {
 // ---------- SPORTS CAR ----------
 
 class CarVehicle extends Vehicle {
-  readonly label = 'GT SPORTS'
-  readonly cameraDist = 22
+  public readonly label = 'GT SPORTS'
+  public readonly cameraDist = 22
   private grounded = false
 
   constructor(keys: Set<string>, lib: ModelLibrary) {
@@ -54,7 +54,7 @@ class CarVehicle extends Vehicle {
     this.object.add(lib.instance('car', buildCarPrimitive))
   }
 
-  update(dt: number, terrain: Object3D): void {
+  public override update(dt: number, terrain: Object3D): void {
     // speed-sensitive steering: nimble in town, stable at 250 km/h
     const speedFrac = Math.abs(this._speed) / 70
     groundDrive(this, dt, terrain, {
@@ -72,8 +72,8 @@ const NORMAL_MAX = 170
 const ROLL_SPEED = (Math.PI * 2) / 1.1  // full barrel roll in 1.1 s
 
 class JetVehicle extends Vehicle {
-  readonly label = 'F-16 JET'
-  readonly cameraDist = 90
+  public readonly label = 'F-16 JET'
+  public readonly cameraDist = 90
   override readonly fireCooldown = 0.28
   private pitch = 0
   private bank = 0
@@ -93,7 +93,7 @@ class JetVehicle extends Vehicle {
     this._speed = 80
   }
 
-  update(dt: number, terrain: Object3D): void {
+  public override update(dt: number, terrain: Object3D): void {
     const throttleUp   = this.keys.has('w')
     const throttleDown = this.keys.has('s')
     const left         = this.keys.has('a')
@@ -175,7 +175,7 @@ class JetVehicle extends Vehicle {
     }
   }
 
-  override get state(): VehicleState {
+  public override get state(): VehicleState {
     return {
       label: this.label,
       speed: this._speed,
@@ -186,7 +186,7 @@ class JetVehicle extends Vehicle {
     }
   }
 
-  override fireRay() {
+  public override fireRay() {
     const dir = new Vector3(
       Math.sin(this._heading) * Math.cos(this.pitch),
       Math.sin(this.pitch),
@@ -295,34 +295,34 @@ export class VehicleManager {
     window.addEventListener('keyup', e => this.keys.delete(e.key.toLowerCase()))
   }
 
-  get active(): Vehicle {
+  public get active(): Vehicle {
     return this.vehicles[this.activeType]
   }
 
   /** Live key state (lowercased), for camera control in the render loop. */
-  held(key: string): boolean {
+  public held(key: string): boolean {
     return this.keys.has(key)
   }
 
   /** Feed the follow-camera azimuth to the spider so its ground locomotion is
    * camera-relative (no-op for the other vehicles). Call before update(). */
-  setCameraYaw(yaw: number): void {
+  public setCameraYaw(yaw: number): void {
     ;(this.vehicles.spider as SpiderVehicle).setCameraYaw(yaw)
   }
 
-  get position(): Vector3 {
+  public get position(): Vector3 {
     return this.active.position
   }
 
-  get state(): VehicleState {
+  public get state(): VehicleState {
     return this.active.state
   }
 
-  get cameraDist(): number {
+  public get cameraDist(): number {
     return this.active.cameraDist
   }
 
-  switchTo(type: VehicleType): void {
+  public switchTo(type: VehicleType): void {
     if (type === this.activeType) return
     const from = this.active
     // clear any pending bombs from the old vehicle
@@ -340,11 +340,11 @@ export class VehicleManager {
   }
 
   /** Returns and clears any bombs queued by the active vehicle this frame. */
-  drainBombs(): BombDrop[] {
+  public drainBombs(): BombDrop[] {
     return this.active.bombDrops.splice(0)
   }
 
-  update(dt: number, terrain: Object3D): void {
+  public update(dt: number, terrain: Object3D): void {
     this.active.update(dt, terrain)
 
     if (this.keys.has(' ') && this.active.fireCooldown > 0) {
@@ -359,7 +359,7 @@ export class VehicleManager {
     }
   }
 
-  hudText(): string {
+  public hudText(): string {
     const s = this.state
     const kmh = Math.abs(s.speed) * 3.6
     const heading = ((s.heading * 180 / Math.PI) % 360 + 360) % 360
