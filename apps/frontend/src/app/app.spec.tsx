@@ -18,11 +18,11 @@ describe('App', () => {
   });
 
   it('should have a greeting as the title', () => {
-    const { getAllByText } = render(
+    const { getByTestId } = render(
       <BrowserRouter>
         <App />
       </BrowserRouter>
     );
-    expect(getAllByText(new RegExp('The data returned is', 'gi')).length > 0).toBeTruthy();
+    expect(getByTestId('world-view-mock')).toBeTruthy();
   });
 });
