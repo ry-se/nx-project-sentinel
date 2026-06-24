@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 
-import App from './app';
+import { App } from './app';
 
 vi.mock('../features/sandbox/WorldView', () => ({
   WorldView: () => <div data-testid="world-view-mock" />,
