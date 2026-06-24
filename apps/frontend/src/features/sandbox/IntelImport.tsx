@@ -7,6 +7,8 @@ import type {
 } from './engine/createSandbox';
 import { DETECTION_CLASSES, type DetectionClass } from './engine/detections';
 
+import { CANVAS } from '@/constants';
+
 interface IntelImportProps {
   /** Current camera pose, used to prefill the pose field. */
   currentPose: CameraPose | null;
@@ -71,7 +73,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     const canvas = canvasRef.current;
     const img = imageRef.current;
     if (!canvas || !img || !imageSize) return;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
     canvas.width = Math.round(imageSize.width * scale);
     canvas.height = Math.round(imageSize.height * scale);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -107,8 +109,8 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       // facing arrow at the front
       ctx.beginPath();
       ctx.moveTo(f[0], f[1]);
-      ctx.lineTo(f[0] - ax * 12 + px * 7, f[1] - ay * 12 + py * 7);
-      ctx.lineTo(f[0] - ax * 12 - px * 7, f[1] - ay * 12 - py * 7);
+      ctx.lineTo(f[0] - ax * CANVAS.AXIS_MULT + px * CANVAS.POS_MULT, f[1] - ay * CANVAS.AXIS_MULT + py * CANVAS.POS_MULT);
+      ctx.lineTo(f[0] - ax * CANVAS.AXIS_MULT - px * CANVAS.POS_MULT, f[1] - ay * CANVAS.AXIS_MULT - py * CANVAS.POS_MULT);
       ctx.closePath();
       ctx.fillStyle = color;
       ctx.fill();
@@ -116,7 +118,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       if (label) {
         ctx.font = 'bold 12px monospace';
         ctx.fillStyle = color;
-        ctx.fillText(label, r[0] + 4, r[1] - 6);
+        ctx.fillText(label, r[0] + CANVAS.X_OFFSET, r[1] - CANVAS.Y_OFFSET);
       }
     };
 
@@ -127,7 +129,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     if (phase.step === 'axis' && hover) {
       ctx.strokeStyle = 'rgba(99,102,241,1)';
       ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
+      ctx.setLineDash([CANVAS.DASH, CANVAS.GAP]);
       ctx.beginPath();
       ctx.moveTo(phase.rear[0] * scale, phase.rear[1] * scale);
       ctx.lineTo(hover[0] * scale, hover[1] * scale);
@@ -145,7 +147,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
   }, [redraw]);
 
   const toImagePx = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] => {
-    const rect = canvasRef.current!.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect() ?? {left: CANVAS_MAX_H, top: CANVAS_MAX_W};
     return [(e.clientX - rect.left) / scale, (e.clientY - rect.top) / scale];
   };
 
@@ -202,7 +204,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       }
     } else {
       const aspectDelta = Math.abs(imageSize.width / imageSize.height - pose.camera.aspect);
-      if (aspectDelta > 0.05) {
+      if (aspectDelta > CANVAS.ASPECT_MIN) {
         setPoseError(
           `Warning: image aspect ${(imageSize.width / imageSize.height).toFixed(2)} ≠ pose aspect ${pose.camera.aspect.toFixed(2)} — screenshot may be cropped. Deploying anyway.`
         );
@@ -218,7 +220,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       <div className="rounded-box flex max-h-[92vh] w-full max-w-5xl flex-col gap-3 overflow-y-auto bg-base-100 p-6 shadow-xl">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-lg font-bold">📥 Intel Import</span>
+            <span className="text-lg font-bold"><span role='img' aria-label='import'>📥</span> Intel Import</span>
             <span className="ml-3 text-sm text-base-content/50">
               photo + pose → annotate → deploy to world (no AI)
             </span>
@@ -241,7 +243,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
             <div className="flex justify-end gap-2">
               <button
                 className="btn btn-sm"
-                onClick={() => navigator.clipboard.writeText(JSON.stringify(result.detections, null, 2))}
+                onClick={() => void navigator.clipboard.writeText(JSON.stringify(result.detections, null, 2))}
               >
                 Copy JSON
               </button>
@@ -335,7 +337,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                 disabled={!imageSize || annotations.length === 0 || !poseText.trim()}
                 onClick={deploy}
               >
-                🌍 Deploy {annotations.length || ''} to world
+                <span role='img' aria-label='world'>🌍</span> Deploy {annotations.length || ''} to world
               </button>
             </div>
           </div>

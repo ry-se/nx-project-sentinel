@@ -33,7 +33,7 @@ const VEHICLES: Array<{ id: VehicleType; label: string; key: string }> = [
 
 function getStoredKey(): string | null {
   const env = (import.meta.env.VITE_GOOGLE_TILES_KEY as string | undefined) ?? null;
-  return env || localStorage.getItem(KEY_STORAGE);
+  return env ?? localStorage.getItem(KEY_STORAGE);
 }
 
 export function WorldView() {

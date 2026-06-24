@@ -33,7 +33,7 @@ interface Feature {
 export class StrategistController {
   public enabled = false
   public tool: StratTool = 'select'
-  public onStatus: (text: string) => void = () => {}
+  public onStatus: (text: string) => void = () => { /* Custom Hook */}
 
   private camera: PerspectiveCamera
   private canvas: HTMLCanvasElement

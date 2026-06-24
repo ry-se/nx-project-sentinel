@@ -2,10 +2,10 @@ import {
   BoxGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
   Object3D, Scene, Vector3,
 } from 'three'
+
 import type { ProjectileManager } from './projectiles'
 import type { ModelLibrary } from './modelCatalog'
-import { Vehicle } from './vehicleBase'
-import type { VehicleType, VehicleState, BombDrop } from './vehicleBase'
+import { type BombDrop, Vehicle, type VehicleState, type VehicleType } from './vehicleBase'
 import { SpiderVehicle } from './spiderman'
 
 export { Vehicle, DOWN } from './vehicleBase'

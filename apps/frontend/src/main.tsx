@@ -1,7 +1,7 @@
 import { BrowserRouter } from 'react-router-dom';
 import * as ReactDOM from 'react-dom/client';
 
-import App from './app/app';
+import { App } from './app/app';
 import { NavBar } from './layouts/NavBar';
 
 // Tile caching is DISABLED. The cache-first service worker served stale /

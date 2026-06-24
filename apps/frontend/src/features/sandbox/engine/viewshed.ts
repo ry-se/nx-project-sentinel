@@ -1,14 +1,11 @@
 import {
-  CameraHelper, Material, Matrix4, Mesh, MeshDepthMaterial, NoBlending,
+  CameraHelper,Color, Material, Matrix4, Mesh, MeshDepthMaterial, NoBlending,
   Object3D, PerspectiveCamera, RGBADepthPacking, Scene, Vector3,
-  WebGLRenderTarget, WebGLRenderer, Color,
+  WebGLRenderer, WebGLRenderTarget,
 } from 'three'
 import type { TilesRenderer } from '3d-tiles-renderer'
 
-const DEPTH_RES = 2048
-const H_FOV_DEG = 100   // horizontal width of the analysis wedge
-const V_FOV_DEG = 55
-const EYE_HEIGHT = 2
+import { VIEWSHED } from '@/constants'
 
 /**
  * ArcGIS-style viewshed: renders a depth map from an observer's eye and tints
@@ -31,9 +28,9 @@ export class ViewshedController {
 
   constructor(scene: Scene, tiles: TilesRenderer) {
     this.scene = scene
-    this.depthCam = new PerspectiveCamera(V_FOV_DEG, hAspect(), 2, 1000)
+    this.depthCam = new PerspectiveCamera(VIEWSHED.V_FOV_DEG, hAspect(), 2, VIEWSHED.FAR_PLANE)
     this.depthCam.layers.set(0) // tiles only — overlays/tank live on layer 1
-    this.depthTarget = new WebGLRenderTarget(DEPTH_RES, DEPTH_RES)
+    this.depthTarget = new WebGLRenderTarget(VIEWSHED.DEPTH_RES, VIEWSHED.DEPTH_RES)
     this.uniforms.uVsDepth.value = this.depthTarget.texture
 
     // Patch every tile material (current and future) with the viewshed shader
@@ -44,11 +41,11 @@ export class ViewshedController {
   /** Aim the analysis wedge from observer toward target; range = distance. */
   public aim(observerGround: Vector3, targetGround: Vector3): void {
     const obs = observerGround.clone()
-    obs.y += EYE_HEIGHT
+    obs.y += VIEWSHED.EYE_HEIGHT
     const tgt = targetGround.clone()
-    tgt.y += EYE_HEIGHT
+    tgt.y += VIEWSHED.EYE_HEIGHT
 
-    const range = Math.max(obs.distanceTo(tgt), 20)
+    const range = Math.max(obs.distanceTo(tgt), VIEWSHED.DEPTH_MIN)
     this.depthCam.position.copy(obs)
     this.depthCam.far = range
     this.depthCam.aspect = hAspect()
@@ -96,7 +93,7 @@ export class ViewshedController {
     this.scene.overrideMaterial = this.depthMaterial
     this.scene.background = null
     this.scene.fog = null
-    renderer.setClearColor(0xffffff, 1) // cleared = max depth = unoccluded
+    renderer.setClearColor(VIEWSHED.WHITE, 1) // cleared = max depth = unoccluded
     renderer.setRenderTarget(this.depthTarget)
     renderer.clear()
     renderer.render(this.scene, this.depthCam)
@@ -169,5 +166,5 @@ vec3 vsApply(vec3 color) {
 
 function hAspect(): number {
   // aspect = tan(hfov/2) / tan(vfov/2)
-  return Math.tan((H_FOV_DEG * Math.PI) / 360) / Math.tan((V_FOV_DEG * Math.PI) / 360)
+  return Math.tan((VIEWSHED.H_FOV_DEG * Math.PI) / VIEWSHED.BALL_DEG) / Math.tan((VIEWSHED.V_FOV_DEG * Math.PI) / VIEWSHED.BALL_DEG)
 }

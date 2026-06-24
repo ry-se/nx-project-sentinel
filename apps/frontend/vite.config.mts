@@ -2,10 +2,16 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import path from 'path'
 
 export default defineConfig({
   root: import.meta.dirname,
   cacheDir: '../../node_modules/.vite/frontend',
+  resolve: {
+    alias: {
+      '@/constants': path.resolve(__dirname, './src/constants')
+    }
+  },
 
   server: {
     port: 4200,

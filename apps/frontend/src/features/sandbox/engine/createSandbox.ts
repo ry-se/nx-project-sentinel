@@ -17,10 +17,10 @@ import {
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import {
-  GoogleCloudAuthPlugin,
   GLTFExtensionsPlugin,
-  ReorientationPlugin,
+  GoogleCloudAuthPlugin,
   LoadRegionPlugin,
+  ReorientationPlugin,
   SphereRegion,
 } from '3d-tiles-renderer/plugins';
 
@@ -33,8 +33,8 @@ import { BombManager } from './bombs';
 import { GeoFrame } from './geoFrame';
 import { ModelLibrary } from './modelCatalog';
 import {
-  DetectionLayer,
   type DetectionClass,
+  DetectionLayer,
   type SentinelDetection,
 } from './detections';
 
@@ -367,7 +367,7 @@ export function createSandbox(
     const st = vehicles.state;
     const t = vehicles.position;
 
-    const spider = !!st.mode;
+    const spider = Boolean(st.mode);
 
     // Spider only (st.mode is set): arrow keys orbit the camera — the jet
     // owns ↑↓ for pitch, so this must not apply globally. (Right stick.)

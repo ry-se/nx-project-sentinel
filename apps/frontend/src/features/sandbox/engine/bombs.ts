@@ -15,16 +15,18 @@ import {
 
 import type { BombDrop } from './vehicles'
 
-const GRAVITY = -28          // m/s²
-const BLAST_RADIUS = 120     // metres for debris scatter
-const DOWN = new Vector3(0, -1, 0)
+import { BOMB } from '@/constants'
+
+// const BOMB.GRAVITY = -28          // m/s²
+// const BOMB.BLAST_RADIUS = 120     // metres for debris scatter
+// const BOMB.DOWN = new Vector3(0, -1, 0)
 
 // ─── tile mesh deformation ─────────────────────────────────────────────────
 
-const CRATER_R    = 28   // radius of full depression (m)
-const DAMAGE_R    = 85   // outer blast wave radius (m)
-const CRATER_D    = 22   // max downward displacement at crater center (m)
-const DAMAGE_RISE = 15   // max outward + upward displacement in damage ring (m)
+// const BOMB.CRATER_R    = 28   // radius of full depression (m)
+// const BOMB.DAMAGE_R    = 85   // outer blast wave radius (m)
+// const BOMB.CRATER_D    = 22   // max downward displacement at crater center (m)
+// const BOMB.DAMAGE_RISE = 15   // max outward + upward displacement in damage ring (m)
 
 /**
  * Deforms the vertex positions of any tile mesh within the blast radius.
@@ -48,7 +50,7 @@ function deformTiles(blast: Vector3, terrain: Object3D): void {
     const bs = mesh.geometry.boundingSphere
     if (bs) {
       const meshCenter = bs.center.clone().applyMatrix4(mesh.matrixWorld)
-      if (meshCenter.distanceTo(blast) > bs.radius + DAMAGE_R) return
+      if (meshCenter.distanceTo(blast) > bs.radius + BOMB.DAMAGE_R) return
     }
 
     // Ensure we have a plain BufferAttribute (GLB tiles sometimes use
@@ -76,7 +78,7 @@ function deformTiles(blast: Vector3, terrain: Object3D): void {
       vWorld.applyMatrix4(mesh.matrixWorld)
 
       const dist = vWorld.distanceTo(blast)
-      if (dist >= DAMAGE_R) continue
+      if (dist >= BOMB.DAMAGE_R) continue
 
       // Horizontal push direction (ignore Y so vertical faces collapse correctly)
       outDir.set(vWorld.x - blast.x, 0, vWorld.z - blast.z)
@@ -86,16 +88,16 @@ function deformTiles(blast: Vector3, terrain: Object3D): void {
       let dy = 0
       let dhoriz = 0
 
-      if (dist < CRATER_R) {
+      if (dist < BOMB.CRATER_R) {
         // Crater: push DOWN, slight outward shove
-        const t = 1 - dist / CRATER_R
-        dy     = -CRATER_D * t * t
-        dhoriz =  DAMAGE_RISE * 0.25 * t
+        const t = 1 - dist / BOMB.CRATER_R
+        dy     = -BOMB.CRATER_D * t * t
+        dhoriz =  BOMB.DAMAGE_RISE * 0.25 * t
       } else {
         // Damage ring: push OUT and UP like a shockwave
-        const t = 1 - (dist - CRATER_R) / (DAMAGE_R - CRATER_R)
-        dy     = DAMAGE_RISE * t * 0.4
-        dhoriz = DAMAGE_RISE * t
+        const t = 1 - (dist - BOMB.CRATER_R) / (BOMB.DAMAGE_R - BOMB.CRATER_R)
+        dy     = BOMB.DAMAGE_RISE * t * 0.4
+        dhoriz = BOMB.DAMAGE_RISE * t
       }
 
       newWorld.set(
@@ -246,7 +248,7 @@ function createExplosion(pos: Vector3, terrain: Object3D, scene: Scene): Explosi
 
     // Find a tile surface near the blast to decide spawn point
     rc.set(pos.clone().add(new Vector3(0, 3, 0)), outDir)
-    rc.far = BLAST_RADIUS
+    rc.far = BOMB.BLAST_RADIUS
     const hits = rc.intersectObject(terrain, true)
     const spawnPt = hits.length > 0
       ? hits[0].point.clone().add(new Vector3(0, 0.5, 0))
@@ -354,7 +356,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
   for (const d of e.debris) {
     if (!d.mesh.parent) continue
     d.age += dt
-    d.vel.y += GRAVITY * dt
+    d.vel.y += BOMB.GRAVITY * dt
     d.mesh.position.addScaledVector(d.vel, dt)
     d.mesh.rotation.x += d.spin.x * dt
     d.mesh.rotation.y += d.spin.y * dt
@@ -401,13 +403,13 @@ export class BombManager {
 
     // falling bombs
     for (const b of this.active) {
-      b.vel.y += GRAVITY * dt
+      b.vel.y += BOMB.GRAVITY * dt
       b.group.position.addScaledVector(b.vel, dt)
       b.group.rotation.x += dt * 2.5
       b.group.rotation.z += dt * 1.8
 
       // impact check: cast downward from just above
-      this.rc.set(b.group.position.clone().setY(b.group.position.y + 3), DOWN)
+      this.rc.set(b.group.position.clone().setY(b.group.position.y + 3), BOMB.DOWN)
       this.rc.far = 8
       const hits = this.rc.intersectObject(terrain, true)
       if (hits.length > 0) {
