@@ -7,10 +7,17 @@ import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.config import get_settings
 from app.routes.detect import router as detect_router
 from app.schemas import ErrorResponse
+
+# Content-Length ceiling — belt-and-suspenders alongside DetectRequest.image_b64's
+# max_length (Pydantic's cap only applies after the full body is already buffered).
+MAX_BODY_BYTES = 25_000_000
 
 
 def configure_logging() -> None:
@@ -31,7 +38,10 @@ configure_logging()
 logger = structlog.get_logger(__name__)
 settings = get_settings()
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Project Sentinel Backend")
+app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +59,17 @@ async def typed_http_exception_handler(request: Request, exc: HTTPException) -> 
     return JSONResponse(status_code=exc.status_code, content=body)
 
 
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", "unknown")
+    return JSONResponse(
+        status_code=429,
+        content=ErrorResponse(
+            error="rate_limited", detail=str(exc.detail), request_id=request_id
+        ).model_dump(),
+    )
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     request_id = str(uuid.uuid4())
@@ -57,6 +78,19 @@ async def request_context(request: Request, call_next):
 
     with structlog.contextvars.bound_contextvars(request_id=request_id):
         logger.info("request.start", method=request.method, path=request.url.path)
+
+        content_length = request.headers.get("content-length")
+        if content_length is not None and int(content_length) > MAX_BODY_BYTES:
+            logger.warning("request.body_too_large", content_length=content_length)
+            return JSONResponse(
+                status_code=413,
+                content=ErrorResponse(
+                    error="payload_too_large",
+                    detail=f"request body exceeds {MAX_BODY_BYTES} bytes",
+                    request_id=request_id,
+                ).model_dump(),
+            )
+
         try:
             response = await call_next(request)
         except Exception as exc:  # noqa: BLE001 — logged then re-raised as typed 500

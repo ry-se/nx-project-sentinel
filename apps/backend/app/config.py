@@ -29,7 +29,15 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+        if "*" in origins:
+            # main.py always sets allow_credentials=True — a wildcard origin combined
+            # with credentials lets any site read authenticated responses. Fail closed.
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS may not contain '*' — allow_credentials=True requires "
+                "an explicit origin list"
+            )
+        return origins
 
     @property
     def detector_api_key(self) -> str | None:

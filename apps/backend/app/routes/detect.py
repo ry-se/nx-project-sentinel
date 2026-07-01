@@ -3,6 +3,8 @@ import time
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.config import get_settings
 from app.schemas import DetectionBox, DetectRequest, DetectResponse, ErrorResponse
@@ -10,6 +12,10 @@ from app.schemas import DetectionBox, DetectRequest, DetectResponse, ErrorRespon
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["detect"])
+
+# Matches app.main's limiter key strategy — slowapi resolves the shared
+# app.state.limiter at call time, this instance only carries the key_func.
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _stub_detection() -> DetectionBox:
@@ -26,6 +32,7 @@ def _stub_detection() -> DetectionBox:
 
 
 @router.post("/detect", response_model=DetectResponse, responses={400: {"model": ErrorResponse}})
+@limiter.limit("20/minute")
 async def detect(payload: DetectRequest, request: Request) -> DetectResponse:
     request_id = request.state.request_id
     settings = get_settings()
