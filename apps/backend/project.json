@@ -8,7 +8,7 @@
       "continuous": true,
       "options": {
         "cwd": "apps/backend",
-        "command": "node -e \"require('../../tools/python-server').python\" && python -m uvicorn app.main:app --reload --port 8000"
+        "command": "node tools/python-server.js"
       }
     },
     "test": {
