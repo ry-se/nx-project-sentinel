@@ -1,0 +1,13 @@
+{
+  "version": "2.45.6",
+  "type": "coc-project",
+  "description": "Language-agnostic, non-Kailash CO/COC downstream project (variant: base)",
+  "updated": "2026-06-30",
+  "upstream": {
+    "template": "kailash-coc-claude-base",
+    "template_repo": null,
+    "template_version": "2.45.6",
+    "synced_at": "2026-06-29T08:28:38Z",
+    "sdk_packages": {}
+  }
+}
