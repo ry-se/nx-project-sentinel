@@ -153,10 +153,10 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
   }, [redraw]);
 
   const toImagePx = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] => {
-    const rect = canvasRef.current?.getBoundingClientRect() ?? {
-      left: CANVAS_MAX_H,
-      top: CANVAS_MAX_W,
-    };
+    // No real canvas to measure from — {0, 0} is the least-wrong fallback (the prior
+    // CANVAS_MAX_H/CANVAS_MAX_W fallback was both transposed AND the wrong unit for
+    // a screen-position offset).
+    const rect = canvasRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
     return [(e.clientX - rect.left) / scale, (e.clientY - rect.top) / scale];
   };
 
@@ -224,9 +224,19 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
 
   // ---------- auto-detect (no manual boxes) ----------
 
+  // ~16 megapixels — generous for a screenshot/photo, caps memory use during canvas
+  // encode + the outgoing base64 payload size for a hostile/oversized upload.
+  const MAX_AUTO_DETECT_PIXELS = 16_000_000;
+
   const imageToBase64 = (): string => {
     const img = imageRef.current;
     if (!img || !imageSize) throw new Error('no image loaded');
+    if (imageSize.width * imageSize.height > MAX_AUTO_DETECT_PIXELS) {
+      throw new Error(
+        `Image is too large for auto-detect (${imageSize.width}×${imageSize.height}) — ` +
+          'try a smaller image or crop it first.'
+      );
+    }
     const canvas = document.createElement('canvas');
     canvas.width = imageSize.width;
     canvas.height = imageSize.height;
@@ -234,7 +244,9 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     if (!ctx) throw new Error('canvas 2d context unavailable');
     ctx.drawImage(img, 0, 0, imageSize.width, imageSize.height);
     const dataUrl = canvas.toDataURL('image/png');
-    return dataUrl.split(',')[1] ?? '';
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) throw new Error('failed to encode the image — canvas produced no data');
+    return base64;
   };
 
   const autoDetect = async (): Promise<void> => {
@@ -243,8 +255,22 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     if (!pose) return;
 
     setAutoState({ status: 'loading' });
+
+    // Client-side input validation (image too large / canvas failure) is our own
+    // authored, safe-to-show-verbatim message — kept separate from detect()'s own
+    // error handling below so it isn't swallowed by the generic fallback.
+    let imageB64: string;
     try {
-      const imageB64 = imageToBase64();
+      imageB64 = imageToBase64();
+    } catch (err) {
+      setAutoState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Invalid image.',
+      });
+      return;
+    }
+
+    try {
       const detected = await detect(imageB64, pose, { ...imageSize, name: imageName });
       if (detected.length === 0) {
         setAutoState({ status: 'empty' });

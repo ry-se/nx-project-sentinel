@@ -9,7 +9,6 @@ vi.mock('./intel/detectClient', async () => {
     await vi.importActual<typeof import('./intel/detectClient')>('./intel/detectClient');
   return { ...actual, detect: vi.fn() };
 });
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { detect } = await import('./intel/detectClient');
 
 const POSE: CameraPose = {
@@ -151,6 +150,43 @@ describe('IntelImport — auto-detect wiring', () => {
 
     await waitFor(() => expect(screen.getByText(/no detections found/i)).toBeInTheDocument());
     expect(onDeploy).not.toHaveBeenCalled();
+  });
+
+  it('shows a loading state and disables the button while detect() is pending', async () => {
+    let resolveDetect: (value: import('./engine/createSandbox').ImageAnnotation[]) => void;
+    vi.mocked(detect).mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetect = resolve;
+      })
+    );
+    onDeploy.mockReturnValue({ detections: [], placed: 0, failed: 0 });
+
+    render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
+    await loadImage();
+
+    fireEvent.click(screen.getByRole('button', { name: /auto-detect/i }));
+
+    await waitFor(() => expect(screen.getByText(/detecting/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /detecting/i })).toBeDisabled();
+
+    resolveDetect!([]);
+    await waitFor(() => expect(screen.getByText(/no detections found/i)).toBeInTheDocument());
+  });
+
+  it('rejects an oversized image before calling detect() — no unbounded upload', async () => {
+    class HugeFakeImage extends FakeImage {
+      public override naturalWidth = 20000;
+      public override naturalHeight = 20000;
+    }
+    vi.stubGlobal('Image', HugeFakeImage);
+
+    render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
+    await loadImage();
+
+    fireEvent.click(screen.getByRole('button', { name: /auto-detect/i }));
+
+    await waitFor(() => expect(screen.getByText(/too large for auto-detect/i)).toBeInTheDocument());
+    expect(detect).not.toHaveBeenCalled();
   });
 
   it('manual annotate flow is unaffected — still works alongside auto-detect (regression check)', async () => {

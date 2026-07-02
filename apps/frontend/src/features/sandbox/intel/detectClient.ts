@@ -7,6 +7,10 @@ export type DetectClientErrorKind =
   | 'http'
   | 'invalid_response';
 
+// The backend's error `detail` string is untrusted display text (a hostile/misconfigured
+// provider could return an arbitrarily long one) — clamp before it reaches the DOM.
+const MAX_DETAIL_CHARS = 300;
+
 /** Typed error for every detect() failure path — never a silent empty result. */
 export class DetectClientError extends Error {
   constructor(
@@ -81,9 +85,11 @@ export async function detect(
       }),
     });
   } catch (err) {
-    console.error('[detect] network error', err);
+    // baseUrl stays in the console log only — the user-facing message doesn't need to
+    // expose the configured backend host.
+    console.error('[detect] network error', { baseUrl, err });
     throw new DetectClientError(
-      `Could not reach the detection backend at ${baseUrl} — is it running?`,
+      'Could not reach the detection backend — is it running?',
       'network'
     );
   }
@@ -92,7 +98,9 @@ export async function detect(
     let detail = `Detector responded with status ${resp.status}`;
     try {
       const body = (await resp.json()) as DetectApiError;
-      if (body.detail) detail = body.detail;
+      // The backend's detail string is untrusted display text, not markup (React
+      // renders it as an escaped text child) — clamp length defensively regardless.
+      if (body.detail) detail = body.detail.slice(0, MAX_DETAIL_CHARS);
     } catch {
       // Body wasn't the typed error shape — keep the generic status-based detail.
     }
@@ -117,10 +125,21 @@ export async function detect(
       'invalid_response'
     );
   }
+  // Every box must actually have the shape "no reshaping downstream" promises — a
+  // malformed box here would otherwise crash deployFromImage with a raw TypeError
+  // instead of surfacing as this function's own typed-error contract.
+  if (!data.annotations.every(isValidDetectApiBox)) {
+    console.error('[detect] malformed annotation in response', data.annotations);
+    throw new DetectClientError(
+      'Detector response contained a malformed annotation',
+      'invalid_response'
+    );
+  }
+  const latencyMs = Number.isFinite(data.latency_ms) ? data.latency_ms : 0;
 
   console.warn(
     `[detect] ok — ${data.annotations.length} annotation(s), model=${data.model}, ` +
-      `round-trip ${(performance.now() - start).toFixed(0)}ms (server latency_ms=${data.latency_ms.toFixed(1)})`
+      `round-trip ${(performance.now() - start).toFixed(0)}ms (server latency_ms=${latencyMs.toFixed(1)})`
   );
 
   return data.annotations.map((box) => ({
@@ -131,4 +150,19 @@ export async function detect(
     halfWidthPx: box.halfWidthPx,
     confidence: box.confidence,
   }));
+}
+
+function isValidDetectApiBox(box: DetectApiBox): boolean {
+  return (
+    typeof box.id === 'string' &&
+    typeof box.cls === 'string' &&
+    Array.isArray(box.rear) &&
+    box.rear.length === 2 &&
+    box.rear.every(Number.isFinite) &&
+    Array.isArray(box.front) &&
+    box.front.length === 2 &&
+    box.front.every(Number.isFinite) &&
+    Number.isFinite(box.halfWidthPx) &&
+    Number.isFinite(box.confidence)
+  );
 }

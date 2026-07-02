@@ -120,6 +120,24 @@ describe('detectClient.detect', () => {
     });
   });
 
+  it('clamps an oversized backend detail string before it becomes the error message', async () => {
+    const longDetail = 'x'.repeat(5000);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse(500, { error: 'e', detail: longDetail, request_id: 'r1' }))
+    );
+
+    let err: DetectClientError | undefined;
+    try {
+      await detect('img', POSE, IMAGE);
+    } catch (e) {
+      err = e as DetectClientError;
+    }
+    expect(err?.message.length).toBeLessThanOrEqual(300);
+  });
+
   it('throws an http DetectClientError with a generic detail when body is not the typed shape', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 500 })));
 
@@ -142,6 +160,74 @@ describe('detectClient.detect', () => {
     );
 
     await expect(detect('img', POSE, IMAGE)).resolves.toEqual([]);
+  });
+
+  it('preserves a real confidence of 0 — regression guard for the "no client-side 1.0" invariant', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [
+            {
+              id: 'vlm-0',
+              cls: 'aircraft',
+              rear: [0, 0],
+              front: [0, 5],
+              halfWidthPx: 5,
+              confidence: 0,
+              heading_confidence: 'low',
+            },
+          ],
+          model: 'x',
+          latency_ms: 1,
+        })
+      )
+    );
+
+    const annotations = await detect('img', POSE, IMAGE);
+    expect(annotations[0].confidence).toBe(0);
+  });
+
+  it('throws invalid_response for a malformed annotation (missing rear point)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [
+            { id: 'vlm-0', cls: 'aircraft', front: [0, 5], halfWidthPx: 5, confidence: 0.5 },
+          ],
+          model: 'x',
+          latency_ms: 1,
+        })
+      )
+    );
+
+    await expect(detect('img', POSE, IMAGE)).rejects.toMatchObject({ kind: 'invalid_response' });
+  });
+
+  it('does not crash on a missing/non-numeric latency_ms — typed success, not a raw TypeError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [
+            {
+              id: 'vlm-0',
+              cls: 'aircraft',
+              rear: [0, 0],
+              front: [0, 5],
+              halfWidthPx: 5,
+              confidence: 0.5,
+              heading_confidence: 'low',
+            },
+          ],
+          model: 'x',
+          // latency_ms deliberately omitted
+        })
+      )
+    );
+
+    await expect(detect('img', POSE, IMAGE)).resolves.toHaveLength(1);
   });
 
   it('DetectClientError is a real Error subclass with a name', () => {
