@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type {
-  CameraPose,
-  DeployResult,
-  ImageAnnotation,
-} from './engine/createSandbox';
+import type { CameraPose, DeployResult, ImageAnnotation } from './engine/createSandbox';
 import { DETECTION_CLASSES, type DetectionClass } from './engine/detections';
+import { detect, DetectClientError } from './intel/detectClient';
 
 import { CANVAS } from '@/constants';
+
+type AutoDetectState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'empty' };
 
 interface IntelImportProps {
   /** Current camera pose, used to prefill the pose field. */
@@ -36,9 +39,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [scale, setScale] = useState(1);
 
-  const [poseText, setPoseText] = useState(
-    currentPose ? JSON.stringify(currentPose, null, 2) : ''
-  );
+  const [poseText, setPoseText] = useState(currentPose ? JSON.stringify(currentPose, null, 2) : '');
   const [poseError, setPoseError] = useState<string | null>(null);
 
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
@@ -46,6 +47,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
   const [hover, setHover] = useState<[number, number] | null>(null);
 
   const [result, setResult] = useState<DeployResult | null>(null);
+  const [autoState, setAutoState] = useState<AutoDetectState>({ status: 'idle' });
 
   // ---------- image loading ----------
 
@@ -57,9 +59,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       imageRef.current = img;
       setImageName(file.name);
       setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-      setScale(
-        Math.min(CANVAS_MAX_W / img.naturalWidth, CANVAS_MAX_H / img.naturalHeight, 1)
-      );
+      setScale(Math.min(CANVAS_MAX_W / img.naturalWidth, CANVAS_MAX_H / img.naturalHeight, 1));
       setAnnotations([]);
       setPhase({ step: 'idle' });
       setResult(null);
@@ -109,8 +109,14 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       // facing arrow at the front
       ctx.beginPath();
       ctx.moveTo(f[0], f[1]);
-      ctx.lineTo(f[0] - ax * CANVAS.AXIS_MULT + px * CANVAS.POS_MULT, f[1] - ay * CANVAS.AXIS_MULT + py * CANVAS.POS_MULT);
-      ctx.lineTo(f[0] - ax * CANVAS.AXIS_MULT - px * CANVAS.POS_MULT, f[1] - ay * CANVAS.AXIS_MULT - py * CANVAS.POS_MULT);
+      ctx.lineTo(
+        f[0] - ax * CANVAS.AXIS_MULT + px * CANVAS.POS_MULT,
+        f[1] - ay * CANVAS.AXIS_MULT + py * CANVAS.POS_MULT
+      );
+      ctx.lineTo(
+        f[0] - ax * CANVAS.AXIS_MULT - px * CANVAS.POS_MULT,
+        f[1] - ay * CANVAS.AXIS_MULT - py * CANVAS.POS_MULT
+      );
       ctx.closePath();
       ctx.fillStyle = color;
       ctx.fill();
@@ -147,7 +153,10 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
   }, [redraw]);
 
   const toImagePx = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] => {
-    const rect = canvasRef.current?.getBoundingClientRect() ?? {left: CANVAS_MAX_H, top: CANVAS_MAX_W};
+    const rect = canvasRef.current?.getBoundingClientRect() ?? {
+      left: CANVAS_MAX_H,
+      top: CANVAS_MAX_W,
+    };
     return [(e.clientX - rect.left) / scale, (e.clientY - rect.top) / scale];
   };
 
@@ -213,6 +222,46 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     setResult(onDeploy(pose, annotations, { ...imageSize, name: imageName }));
   };
 
+  // ---------- auto-detect (no manual boxes) ----------
+
+  const imageToBase64 = (): string => {
+    const img = imageRef.current;
+    if (!img || !imageSize) throw new Error('no image loaded');
+    const canvas = document.createElement('canvas');
+    canvas.width = imageSize.width;
+    canvas.height = imageSize.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('canvas 2d context unavailable');
+    ctx.drawImage(img, 0, 0, imageSize.width, imageSize.height);
+    const dataUrl = canvas.toDataURL('image/png');
+    return dataUrl.split(',')[1] ?? '';
+  };
+
+  const autoDetect = async (): Promise<void> => {
+    if (!imageSize || !imageName) return;
+    const pose = parsePose();
+    if (!pose) return;
+
+    setAutoState({ status: 'loading' });
+    try {
+      const imageB64 = imageToBase64();
+      const detected = await detect(imageB64, pose, { ...imageSize, name: imageName });
+      if (detected.length === 0) {
+        setAutoState({ status: 'empty' });
+        return;
+      }
+      setAutoState({ status: 'idle' });
+      setResult(onDeploy(pose, detected, { ...imageSize, name: imageName }));
+    } catch (err) {
+      const message =
+        err instanceof DetectClientError
+          ? err.message
+          : 'Unexpected error running auto-detect — see console for details.';
+      if (!(err instanceof DetectClientError)) console.error('[auto-detect]', err);
+      setAutoState({ status: 'error', message });
+    }
+  };
+
   // ---------- render ----------
 
   return (
@@ -220,12 +269,19 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       <div className="rounded-box flex max-h-[92vh] w-full max-w-5xl flex-col gap-3 overflow-y-auto bg-base-100 p-6 shadow-xl">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-lg font-bold"><span role='img' aria-label='import'>📥</span> Intel Import</span>
+            <span className="text-lg font-bold">
+              <span role="img" aria-label="import">
+                📥
+              </span>{' '}
+              Intel Import
+            </span>
             <span className="ml-3 text-sm text-base-content/50">
-              photo + pose → annotate → deploy to world (no AI)
+              photo + pose → auto-detect or manually annotate → deploy to world
             </span>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>
+            ✕
+          </button>
         </div>
 
         {result ? (
@@ -243,11 +299,16 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
             <div className="flex justify-end gap-2">
               <button
                 className="btn btn-sm"
-                onClick={() => void navigator.clipboard.writeText(JSON.stringify(result.detections, null, 2))}
+                onClick={() =>
+                  void navigator.clipboard.writeText(JSON.stringify(result.detections, null, 2))
+                }
               >
                 Copy JSON
               </button>
-              <button className="btn btn-sm border-none bg-indigo-600 text-white hover:bg-indigo-700" onClick={onClose}>
+              <button
+                className="btn btn-sm border-none bg-indigo-600 text-white hover:bg-indigo-700"
+                onClick={onClose}
+              >
                 Done — view world
               </button>
             </div>
@@ -302,7 +363,10 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
               </div>
               <div className="flex max-h-44 flex-col gap-1 overflow-y-auto">
                 {annotations.map((a, i) => (
-                  <div key={a.id} className="flex items-center gap-2 rounded-lg bg-base-200 px-2 py-1">
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-2 rounded-lg bg-base-200 px-2 py-1"
+                  >
                     <span className="text-xs font-bold text-red-500">#{i + 1}</span>
                     <select
                       className="select select-bordered select-xs flex-1"
@@ -316,7 +380,9 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                       }
                     >
                       {DETECTION_CLASSES.map((c) => (
-                        <option key={c.id} value={c.id}>{c.label}</option>
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
                       ))}
                     </select>
                     <button
@@ -332,13 +398,50 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                 )}
               </div>
 
-              <button
-                className="btn mt-auto border-none bg-indigo-600 text-white hover:bg-indigo-700"
-                disabled={!imageSize || annotations.length === 0 || !poseText.trim()}
-                onClick={deploy}
-              >
-                <span role='img' aria-label='world'>🌍</span> Deploy {annotations.length || ''} to world
-              </button>
+              <div className="mt-auto flex flex-col gap-2 border-t border-base-300 pt-2">
+                {autoState.status === 'error' && (
+                  <div className="alert alert-error text-xs">{autoState.message}</div>
+                )}
+                {autoState.status === 'empty' && (
+                  <div className="alert alert-warning text-xs">
+                    No detections found in this image — try manual annotation, or a different image.
+                  </div>
+                )}
+
+                <button
+                  className="btn border-none bg-emerald-600 text-white hover:bg-emerald-700"
+                  disabled={!imageSize || !poseText.trim() || autoState.status === 'loading'}
+                  onClick={() => void autoDetect()}
+                >
+                  {autoState.status === 'loading' ? (
+                    <>
+                      <span className="loading loading-spinner loading-xs" /> Detecting…
+                    </>
+                  ) : (
+                    <>
+                      <span role="img" aria-label="robot">
+                        🤖
+                      </span>{' '}
+                      Auto-detect &amp; deploy
+                    </>
+                  )}
+                </button>
+
+                <div className="divider my-0 text-xs text-base-content/40">
+                  or annotate manually
+                </div>
+
+                <button
+                  className="btn border-none bg-indigo-600 text-white hover:bg-indigo-700"
+                  disabled={!imageSize || annotations.length === 0 || !poseText.trim()}
+                  onClick={deploy}
+                >
+                  <span role="img" aria-label="world">
+                    🌍
+                  </span>{' '}
+                  Deploy {annotations.length || ''} to world
+                </button>
+              </div>
             </div>
           </div>
         )}

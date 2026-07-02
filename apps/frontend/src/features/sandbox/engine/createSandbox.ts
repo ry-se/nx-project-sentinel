@@ -65,13 +65,16 @@ export interface CameraPose {
   };
 }
 
-/** One manually-annotated oriented box on the imported image (pixel coords). */
+/** One annotated (manual or auto-detected) oriented box on the imported image (pixel
+ * coords). `confidence` is set by the detector for the auto path; manual boxes leave it
+ * undefined and deployFromImage falls back to 1.0 (human-annotated == certain). */
 export interface ImageAnnotation {
   id: string;
   cls: DetectionClass;
   rear: [number, number];
   front: [number, number];
   halfWidthPx: number;
+  confidence?: number;
 }
 
 export interface DeployResult {
@@ -617,7 +620,7 @@ export function createSandbox(
         detection_id: crypto.randomUUID(),
         image_id: imageId,
         class: ann.cls,
-        confidence: 1.0, // human-annotated
+        confidence: ann.confidence ?? 1.0, // detector's value for auto path; 1.0 for manual
         bbox_pixel: {
           x: Math.round(cx),
           y: Math.round(cy),
