@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 
 import httpx2 as httpx
 import structlog
@@ -9,6 +10,11 @@ from app.detector.class_map import map_class
 from app.schemas import DetectionBox, ImagePose
 
 logger = structlog.get_logger(__name__)
+
+# Caps on the third-party (model-controlled) response — defense against a hostile or
+# misbehaving provider, not just malformed-but-honest output.
+MAX_PROVIDER_RESPONSE_CHARS = 2_000_000
+MAX_DETECTIONS_PER_RESPONSE = 200
 
 _PROMPT = """Find every combat vehicle or aircraft in this image. For each object return
 one JSON entry with:
@@ -42,22 +48,31 @@ class VisionLanguageModelAdapter(Detector):
         self._api_key = api_key
 
     async def detect(self, image_bytes: bytes, pose: ImagePose | None = None) -> list[DetectionBox]:
-        raw_text = await self._call_provider(image_bytes)
+        raw_text = await self._call_provider(image_bytes, pose)
         raw_detections = self._parse_response(raw_text)
         return self._to_detection_boxes(raw_detections)
 
-    async def _call_provider(self, image_bytes: bytes) -> str:
+    async def _call_provider(self, image_bytes: bytes, pose: ImagePose | None = None) -> str:
         """The third-party HTTP boundary — the seam tests monkeypatch to inject
         recorded/fixture responses (W2 acceptance criterion)."""
         image_b64 = base64.b64encode(image_bytes).decode()
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
+        prompt_text = _PROMPT
+        if pose is not None:
+            # Context only — the model still MUST answer in image pixel coordinates;
+            # pose helps it reason about scale/perspective, never a coordinate system swap.
+            prompt_text += (
+                f"\n\nCamera context (for scale/perspective reasoning only — still respond "
+                f"in image pixel coordinates): heading {pose.heading_deg:.1f} deg, "
+                f"pitch {pose.pitch_deg:.1f} deg, altitude {pose.alt_m:.0f}m."
+            )
         payload = {
             "model": self._model,
             "messages": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": _PROMPT},
+                        {"type": "text", "text": prompt_text},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:image/png;base64,{image_b64}"},
@@ -75,8 +90,11 @@ class VisionLanguageModelAdapter(Detector):
                 resp.raise_for_status()
                 data = resp.json()
         except httpx.HTTPError as exc:
+            # str(exc) can embed the internal base_url (host/port/path) — log it, but
+            # never return it to the API client (detect.py surfaces DetectorError's
+            # message verbatim in the 502 body).
             logger.warning("vision_adapter.provider_error", error=str(exc))
-            raise DetectorError(f"detector provider request failed: {exc}") from exc
+            raise DetectorError("detector provider request failed") from exc
 
         try:
             return data["choices"][0]["message"]["content"]
@@ -85,21 +103,30 @@ class VisionLanguageModelAdapter(Detector):
             raise DetectorError("detector provider returned an unexpected response shape") from exc
 
     def _parse_response(self, raw_text: str) -> list[dict]:
+        if len(raw_text) > MAX_PROVIDER_RESPONSE_CHARS:
+            logger.warning("vision_adapter.response_too_large", chars=len(raw_text))
+            raise DetectorError("detector provider response exceeded the size limit")
+
         text = raw_text.strip()
         # Models sometimes wrap JSON in markdown fences despite the prompt — strip them.
         if text.startswith("```"):
             text = text.strip("`")
-            if text.startswith("json"):
+            if text[:4].lower() == "json":
                 text = text[4:]
             text = text.strip()
         try:
             parsed = json.loads(text)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, RecursionError, ValueError) as exc:
+            # RecursionError covers pathologically deeply-nested JSON from a hostile or
+            # misbehaving provider — the whole-response contract failure, per invariant 6.
             logger.warning("vision_adapter.invalid_json", error=str(exc))
             raise DetectorError("detector provider did not return valid JSON") from exc
         if not isinstance(parsed, list):
             logger.warning("vision_adapter.not_a_list", type_seen=type(parsed).__name__)
             raise DetectorError("detector provider response must be a JSON array")
+        if len(parsed) > MAX_DETECTIONS_PER_RESPONSE:
+            logger.warning("vision_adapter.too_many_detections", count=len(parsed))
+            raise DetectorError("detector provider returned too many detections")
         return parsed
 
     def _to_detection_boxes(self, raw_detections: list[dict]) -> list[DetectionBox]:
@@ -114,6 +141,9 @@ class VisionLanguageModelAdapter(Detector):
                 front = (float(raw["front"][0]), float(raw["front"][1]))
                 half_width_px = float(raw["box"][2]) / 2.0
                 confidence = float(raw["confidence"])
+                if not all(math.isfinite(v) for v in (*rear, *front, half_width_px, confidence)):
+                    logger.warning("vision_adapter.non_finite_value", index=i)
+                    continue
                 if not (0.0 <= confidence <= 1.0):
                     logger.warning(
                         "vision_adapter.confidence_out_of_range", confidence=confidence
