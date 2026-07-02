@@ -10,12 +10,10 @@ vi.mock('../features/sandbox/WorldView', () => ({
 describe('App', () => {
   it('should render successfully', () => {
     const { baseElement } = render(
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <App />
       </BrowserRouter>
     );
     expect(baseElement).toBeTruthy();
   });
-
-
 });

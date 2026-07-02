@@ -10,19 +10,19 @@ import { NavBar } from './layouts/NavBar';
 // worker + its cache so streaming behaves normally again.
 if ('serviceWorker' in navigator) {
   void navigator.serviceWorker.getRegistrations().then((regs) => {
-    for (const reg of regs) void reg.unregister()
-  })
+    for (const reg of regs) void reg.unregister();
+  });
 }
 if ('caches' in window) {
   void caches.keys().then((names) => {
-    for (const name of names) if (name.startsWith('sentinel-tiles')) void caches.delete(name)
-  })
+    for (const name of names) if (name.startsWith('sentinel-tiles')) void caches.delete(name);
+  });
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
 root.render(
-  <BrowserRouter>
+  <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <NavBar />
     <App />
   </BrowserRouter>

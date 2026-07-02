@@ -21,20 +21,20 @@
  *   1 = hook error (e.g. timeout, malformed input)
  */
 
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
 const TIMEOUT_MS = 3000;
 const timeout = setTimeout(() => {
-  console.error("[HOOK TIMEOUT] integration-hygiene exceeded 3s limit");
+  console.error('[HOOK TIMEOUT] integration-hygiene exceeded 3s limit');
   console.log(JSON.stringify({ continue: true }));
   process.exit(1);
 }, TIMEOUT_MS);
 
-let input = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => (input += chunk));
-process.stdin.on("end", () => {
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => (input += chunk));
+process.stdin.on('end', () => {
   clearTimeout(timeout);
   try {
     const data = JSON.parse(input);
@@ -46,10 +46,10 @@ process.stdin.on("end", () => {
     const out = { continue: true };
     if (Array.isArray(result.messages) && result.messages.length) {
       out.hookSpecificOutput = {
-        hookEventName: "PostToolUse",
+        hookEventName: 'PostToolUse',
         additionalContext: result.messages
           .map((m) => (m && m.message ? `[${m.rule}] ${m.message}` : String(m)))
-          .join("\n"),
+          .join('\n'),
       };
     }
     console.log(JSON.stringify(out));
@@ -66,25 +66,21 @@ process.stdin.on("end", () => {
 // ---------------------------------------------------------------------------
 
 function checkFile(data) {
-  const filePath = data.tool_input?.file_path || "";
+  const filePath = data.tool_input?.file_path || '';
   const ext = path.extname(filePath).toLowerCase();
 
-  const sourceExts = [".py", ".rs", ".ts", ".tsx", ".js", ".jsx", ".rb"];
+  const sourceExts = ['.py', '.rs', '.ts', '.tsx', '.js', '.jsx', '.rb'];
   if (!sourceExts.includes(ext)) return { messages: [] };
 
   // Skip migration, test, and generated files -- they have legitimate
   // reasons to contain patterns this hook would otherwise flag.
-  if (
-    /(migrations?\/|tests?\/|__tests__\/|test_|_test\.|\.spec\.|\.test\.)/.test(
-      filePath,
-    )
-  ) {
+  if (/(migrations?\/|tests?\/|__tests__\/|test_|_test\.|\.spec\.|\.test\.)/.test(filePath)) {
     return { messages: [] };
   }
 
-  let content = "";
+  let content = '';
   try {
-    content = fs.readFileSync(filePath, "utf8");
+    content = fs.readFileSync(filePath, 'utf8');
   } catch {
     return { messages: [] }; // file deleted or unreadable; nothing to check
   }
@@ -92,16 +88,18 @@ function checkFile(data) {
   const messages = [];
   const rel = path.relative(data.cwd || process.cwd(), filePath);
 
-  // 1. Raw SQL strings outside migration files (DataFlow bypass)
+  // 1. Raw SQL strings outside migration files (DataFlow bypass).
+  // Case-sensitive (uppercase-only) on purpose: a case-insensitive match collides with
+  // common lowercase CSS/HTML tokens (e.g. `className="select select-bordered"` in JSX)
+  // that have nothing to do with SQL. Real inline SQL string literals are conventionally
+  // uppercase-keyword; this trades a narrow false-negative (someone writing lowercase
+  // `"select * from x"`) for closing a much higher-volume false-positive class.
   const sqlPattern =
-    /["'`](?:\s*)(?:SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)\s+/i;
-  if (
-    sqlPattern.test(content) &&
-    !/\/(?:db|infrastructure|dialect)\//.test(filePath)
-  ) {
+    /["'`](?:\s*)(?:SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)\s+/;
+  if (sqlPattern.test(content) && !/\/(?:db|infrastructure|dialect)\//.test(filePath)) {
     messages.push({
-      severity: "warn",
-      rule: "framework-first.md § Work-Domain Binding",
+      severity: 'warn',
+      rule: 'framework-first.md § Work-Domain Binding',
       message: `${rel}: raw SQL string detected. DataFlow (@db.model, db.express) is MANDATORY for all DB work. Consult dataflow-specialist.`,
     });
   }
@@ -110,27 +108,27 @@ function checkFile(data) {
   const mockPattern = /\b(MOCK|FAKE|DUMMY|SAMPLE)_[A-Z][A-Z0-9_]*\s*[:=]/;
   if (mockPattern.test(content)) {
     messages.push({
-      severity: "warn",
-      rule: "zero-tolerance.md Rule 2",
+      severity: 'warn',
+      rule: 'zero-tolerance.md Rule 2',
       message: `${rel}: mock/fake/dummy constant detected. Frontend mock data is a stub -- remove before ship.`,
     });
   }
 
   // 3. Silent exception swallows
   const silentSwallowPatterns = [
-    { pat: /except\s*:\s*pass\b/, lang: "Python" },
+    { pat: /except\s*:\s*pass\b/, lang: 'Python' },
     {
       pat: /except\s+Exception\s*:\s*(?:pass|return\s+None)\b/,
-      lang: "Python",
+      lang: 'Python',
     },
-    { pat: /catch\s*\([^)]*\)\s*\{\s*\}/, lang: "JS/TS" },
-    { pat: /rescue\s*(?:=>\s*\w+)?\s*$\s*end/m, lang: "Ruby" },
+    { pat: /catch\s*\([^)]*\)\s*\{\s*\}/, lang: 'JS/TS' },
+    { pat: /rescue\s*(?:=>\s*\w+)?\s*$\s*end/m, lang: 'Ruby' },
   ];
   for (const { pat, lang } of silentSwallowPatterns) {
     if (pat.test(content)) {
       messages.push({
-        severity: "warn",
-        rule: "zero-tolerance.md Rule 3",
+        severity: 'warn',
+        rule: 'zero-tolerance.md Rule 3',
         message: `${rel}: silent ${lang} exception swallow. BLOCKED per Rule 3 -- log AND act (retry, fall back, re-raise) or re-raise.`,
       });
       break;
@@ -140,12 +138,15 @@ function checkFile(data) {
   // 4. Endpoint handlers with no logger call anywhere in the file
   const endpointPattern =
     /(?:@(?:router|app|api)\.(?:get|post|put|patch|delete)|@route|def\s+\w+\s*\(\s*request|async\s+def\s+\w+\s*\(\s*req)/;
+  // Includes console.* — this repo's frontend has no logger/structlog dependency and
+  // uses bracketed-tag console logging as its established convention (e.g. `[detect]`,
+  // `[sandbox]`, `[labels]` in apps/frontend/src/features/sandbox/**).
   const loggerPattern =
-    /(?:logger\.(?:info|warn|warning|error|debug|exception)|structlog\.|Rails\.logger|semantic_logger|tracing::)/;
+    /(?:logger\.(?:info|warn|warning|error|debug|exception)|structlog\.|Rails\.logger|semantic_logger|tracing::|console\.(?:log|error|warn|info|debug))/;
   if (endpointPattern.test(content) && !loggerPattern.test(content)) {
     messages.push({
-      severity: "warn",
-      rule: "observability.md § Mandatory Log Points",
+      severity: 'warn',
+      rule: 'observability.md § Mandatory Log Points',
       message: `${rel}: endpoint handler detected with no logger call. Every endpoint MUST log entry, exit, and error paths.`,
     });
   }
@@ -155,8 +156,8 @@ function checkFile(data) {
     /(?:requests\.(?:get|post|put|patch|delete)|httpx\.(?:get|post|put|patch|delete)|\bfetch\s*\(|urllib\.request)/;
   if (rawHttpPattern.test(content) && !loggerPattern.test(content)) {
     messages.push({
-      severity: "warn",
-      rule: "framework-first.md § Work-Domain Binding + observability.md",
+      severity: 'warn',
+      rule: 'framework-first.md § Work-Domain Binding + observability.md',
       message: `${rel}: raw HTTP client call detected with no surrounding log. Outbound integrations MUST log intent + result. Consult nexus-specialist.`,
     });
   }
