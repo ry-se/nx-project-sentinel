@@ -131,6 +131,48 @@ describe('detectClient.detect', () => {
     await expect(detect('img', POSE, IMAGE)).rejects.toMatchObject({ kind: 'invalid_response' });
   });
 
+  it('throws invalid_response when cls is not one of the known detection classes — regression guard', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [
+            {
+              id: 'vlm-0',
+              cls: 'main_battle_tank', // not one of DETECTION_CLASSES — a hostile/misconfigured
+              // provider could return an arbitrary class label here
+              rear: [0, 0],
+              front: [0, 5],
+              halfWidthPx: 5,
+              confidence: 0.6,
+              heading_confidence: 'high',
+            },
+          ],
+          model: 'x',
+          latency_ms: 1,
+        })
+      )
+    );
+
+    await expect(detect('img', POSE, IMAGE)).rejects.toMatchObject({ kind: 'invalid_response' });
+  });
+
+  it('falls back to "unknown" instead of crashing when model is not a string — regression guard', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [],
+          model: { nested: 'object' }, // hostile/misconfigured provider — not the documented shape
+          latency_ms: 1,
+        })
+      )
+    );
+
+    const result = await detect('img', POSE, IMAGE);
+    expect(result.model).toBe('unknown');
+  });
+
   it('sends pose mapped to the backend snake_case contract', async () => {
     const fetchMock = vi
       .fn()

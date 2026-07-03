@@ -1,5 +1,5 @@
 import type { CameraPose, ImageAnnotation } from '../engine/createSandbox';
-import type { DetectionClass } from '../engine/detections';
+import { DETECTION_CLASSES, type DetectionClass } from '../engine/detections';
 
 export type DetectClientErrorKind =
   | 'no_backend_configured'
@@ -159,17 +159,22 @@ export async function detect(
       confidence: box.confidence,
       headingConfidence: box.heading_confidence,
     })),
-    model: data.model,
+    // Same untrusted-display-text treatment as the error `detail` above — a non-string
+    // model would otherwise crash the React tree ("Objects are not valid as a React
+    // child") wherever it's rendered.
+    model: typeof data.model === 'string' ? data.model.slice(0, MAX_DETAIL_CHARS) : 'unknown',
     latencyMs,
   };
 }
 
 const HEADING_CONFIDENCE_VALUES = ['high', 'medium', 'low'];
+const DETECTION_CLASS_IDS = DETECTION_CLASSES.map((c) => c.id);
 
 function isValidDetectApiBox(box: DetectApiBox): boolean {
   return (
     typeof box.id === 'string' &&
     typeof box.cls === 'string' &&
+    DETECTION_CLASS_IDS.includes(box.cls) &&
     Array.isArray(box.rear) &&
     box.rear.length === 2 &&
     box.rear.every(Number.isFinite) &&

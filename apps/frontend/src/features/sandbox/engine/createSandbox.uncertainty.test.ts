@@ -43,4 +43,9 @@ describe('estimateGeoUncertaintyM', () => {
     expect(result).toBeGreaterThan(0);
     expect(result).toBe(Math.round(result * 10) / 10);
   });
+
+  it('a zero image height stays finite instead of producing Infinity — regression guard', () => {
+    const result = estimateGeoUncertaintyM(500, 60, 0, -1);
+    expect(Number.isFinite(result)).toBe(true);
+  });
 });

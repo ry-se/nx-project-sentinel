@@ -187,7 +187,10 @@ export function estimateGeoUncertaintyM(
   rayDirY: number
 ): number {
   const fovRad = (fovDeg * Math.PI) / 180;
-  const metersPerPixel = (2 * range * Math.tan(fovRad / 2)) / imageHeightPx;
+  // Floored so a malformed/zero image height can't produce Infinity/NaN in a rendered
+  // "±Xm" label — every real caller passes a loaded image's natural height, always > 0,
+  // but the estimate stays finite regardless.
+  const metersPerPixel = (2 * range * Math.tan(fovRad / 2)) / Math.max(imageHeightPx, 1);
   const obliquity = 1 / Math.max(Math.abs(rayDirY), 0.15);
   return Math.round(metersPerPixel * ASSUMED_PIXEL_ERROR_PX * obliquity * 10) / 10;
 }

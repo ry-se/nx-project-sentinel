@@ -556,6 +556,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                     type="checkbox"
                     className="checkbox checkbox-xs"
                     checked={reviewMode}
+                    disabled={autoState.status === 'loading'}
                     onChange={(e) => setReviewMode(e.target.checked)}
                   />
                   Require human confirmation before deploy
