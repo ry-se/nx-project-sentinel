@@ -471,11 +471,17 @@ def test_get_detector_selects_stub():
     assert isinstance(get_detector(settings), StubDetector)
 
 
-def test_get_detector_selects_vlm_local_with_resolved_defaults():
+def test_get_detector_selects_vlm_local_with_resolved_defaults(monkeypatch):
     # _env_file=None: this test verifies the resolver's hardcoded per-provider defaults,
-    # not interaction with a real .env — without this, a developer's local .env setting
-    # DETECTOR_BASE_URL/DETECTOR_MODEL (e.g. to run against a hosted API) silently
-    # contaminates this test via Settings' own env_file=".env" config.
+    # not interaction with a real .env file, via Settings' own env_file=".env" config.
+    # monkeypatch.delenv: _env_file=None only blocks the FILE read — pydantic-settings
+    # still reads real OS environment variables unconditionally, and Nx auto-loads the
+    # repo-root .env into every task's process environment, so `nx test backend` (unlike
+    # a bare `uv run pytest`) inherits DETECTOR_BASE_URL/DETECTOR_MODEL from there if a
+    # developer has them set for local experimentation (e.g. pointed at a hosted API).
+    # Both guards are needed together.
+    monkeypatch.delenv("DETECTOR_BASE_URL", raising=False)
+    monkeypatch.delenv("DETECTOR_MODEL", raising=False)
     # detector_tiling_enabled=False: this test verifies the INNER adapter's resolved
     # config, not the tiling wrapper — see test_get_detector_wraps_vlm_in_tiling_by_default
     # for that.

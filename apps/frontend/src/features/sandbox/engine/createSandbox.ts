@@ -195,6 +195,113 @@ export function estimateGeoUncertaintyM(
   return Math.round(metersPerPixel * ASSUMED_PIXEL_ERROR_PX * obliquity * 10) / 10;
 }
 
+/** Everything `deployFromImage` needs from the running sandbox, as explicit dependencies
+ * rather than closure variables — extracted (like `raycastBoundedHit` above) so the real
+ * monoplotting/deploy logic is independently testable with real Three.js primitives (a
+ * plain mesh + a bare `TilesRenderer` + `GeoFrame`), no canvas/WebGL/Google-tiles-network
+ * needed. W6's E2E smoke test exercises this function directly, not a stub. */
+export interface DeployDeps {
+  tilesGroup: Object3D;
+  geoFrame: GeoFrame;
+  detectionLayer: DetectionLayer;
+}
+
+/** Monoplots each annotation: reconstructs the screenshot camera, raycasts pixel
+ * coordinates onto `deps.tilesGroup` (bounded — see `raycastBoundedHit`), converts to
+ * geo via `deps.geoFrame`, estimates ground uncertainty, spawns the detection into
+ * `deps.detectionLayer`, and returns the resulting `SentinelDetection` records. */
+export function deployAnnotations(
+  deps: DeployDeps,
+  pose: CameraPose,
+  annotations: ImageAnnotation[],
+  image: { width: number; height: number; name: string },
+  provenance?: DeployProvenance
+): DeployResult {
+  const { tilesGroup, geoFrame, detectionLayer } = deps;
+
+  // Reconstruct the camera exactly as it was at screenshot time
+  const shotCam = new PerspectiveCamera(pose.camera.fovDeg, image.width / image.height, 1, 50000);
+  shotCam.position.fromArray(pose.camera.local.position);
+  shotCam.quaternion.copy(new Quaternion().fromArray(pose.camera.local.quaternion));
+  shotCam.updateMatrixWorld(true);
+  shotCam.updateProjectionMatrix();
+
+  const raycaster = new Raycaster();
+  (raycaster as unknown as { firstHitOnly: boolean }).firstHitOnly = true;
+
+  const castPixel = (u: number, v: number): Vector3 | null => {
+    const ndc = new Vector2((u / image.width) * 2 - 1, 1 - (v / image.height) * 2);
+    return raycastBoundedHit(raycaster, ndc, shotCam, tilesGroup);
+  };
+
+  const imageId = crypto.randomUUID();
+  const detections: SentinelDetection[] = [];
+  let placed = 0;
+  let failed = 0;
+
+  for (const ann of annotations) {
+    const cx = (ann.rear[0] + ann.front[0]) / 2;
+    const cy = (ann.rear[1] + ann.front[1]) / 2;
+    const center = castPixel(cx, cy);
+    if (!center) {
+      failed++;
+      continue;
+    }
+    const frontPt = castPixel(ann.front[0], ann.front[1]);
+    const rearPt = castPixel(ann.rear[0], ann.rear[1]);
+
+    let headingVec = new Vector3(0, 0, 1);
+    if (frontPt && rearPt) {
+      headingVec = frontPt.clone().sub(rearPt);
+      headingVec.y = 0;
+      if (headingVec.lengthSq() < 1e-6) headingVec.set(0, 0, 1);
+      headingVec.normalize();
+    }
+
+    const geo = geoFrame.localToGeo(center);
+    const axisLen = Math.hypot(ann.front[0] - ann.rear[0], ann.front[1] - ann.rear[1]);
+    const confidence = ann.confidence ?? 1.0; // detector's value for auto path; 1.0 for manual
+    const range = center.distanceTo(shotCam.position);
+    const rayDirY = center.clone().sub(shotCam.position).normalize().y;
+    const uncertaintyM = estimateGeoUncertaintyM(range, pose.camera.fovDeg, image.height, rayDirY);
+
+    detectionLayer.spawn(
+      center,
+      Math.atan2(headingVec.x, headingVec.z),
+      ann.cls,
+      `${ann.cls === 'armored_fighting_vehicle' ? 'AFV' : ann.cls === 'light_military_vehicle' ? 'LMV' : 'AIR'}-${placed + 1}`,
+      { confidence, uncertaintyM }
+    );
+
+    detections.push({
+      detection_id: crypto.randomUUID(),
+      image_id: imageId,
+      class: ann.cls,
+      confidence,
+      bbox_pixel: {
+        x: Math.round(cx),
+        y: Math.round(cy),
+        w: Math.round(axisLen),
+        h: Math.round(ann.halfWidthPx * 2),
+        theta: Math.atan2(ann.front[1] - ann.rear[1], ann.front[0] - ann.rear[0]),
+      },
+      lat: geo.lat,
+      lon: geo.lon,
+      world_heading: geoFrame.compassHeadingDeg(headingVec),
+      heading_confidence: ann.headingConfidence ?? 'high', // detector's value for auto path; manual boxes are exact
+      timestamp: pose.capturedAt,
+      source_image_url: image.name,
+      method: provenance?.method ?? 'manual',
+      model: provenance?.model,
+      detected_at: provenance?.detectedAt,
+      uncertainty_m: uncertaintyM,
+    });
+    placed++;
+  }
+
+  return { detections, placed, failed };
+}
+
 /** Pings the tileset root so Google's verbatim rejection reason can be shown. */
 export async function preflightGoogleKey(apiKey: string): Promise<string | null> {
   try {
@@ -605,92 +712,13 @@ export function createSandbox(
     image: { width: number; height: number; name: string },
     provenance?: DeployProvenance
   ): DeployResult {
-    // Reconstruct the camera exactly as it was at screenshot time
-    const shotCam = new PerspectiveCamera(pose.camera.fovDeg, image.width / image.height, 1, 50000);
-    shotCam.position.fromArray(pose.camera.local.position);
-    shotCam.quaternion.copy(new Quaternion().fromArray(pose.camera.local.quaternion));
-    shotCam.updateMatrixWorld(true);
-    shotCam.updateProjectionMatrix();
-
-    const raycaster = new Raycaster();
-    (raycaster as unknown as { firstHitOnly: boolean }).firstHitOnly = true;
-
-    const castPixel = (u: number, v: number): Vector3 | null => {
-      const ndc = new Vector2((u / image.width) * 2 - 1, 1 - (v / image.height) * 2);
-      return raycastBoundedHit(raycaster, ndc, shotCam, tiles.group);
-    };
-
-    const imageId = crypto.randomUUID();
-    const detections: SentinelDetection[] = [];
-    let placed = 0;
-    let failed = 0;
-
-    for (const ann of annotations) {
-      const cx = (ann.rear[0] + ann.front[0]) / 2;
-      const cy = (ann.rear[1] + ann.front[1]) / 2;
-      const center = castPixel(cx, cy);
-      if (!center) {
-        failed++;
-        continue;
-      }
-      const frontPt = castPixel(ann.front[0], ann.front[1]);
-      const rearPt = castPixel(ann.rear[0], ann.rear[1]);
-
-      let headingVec = new Vector3(0, 0, 1);
-      if (frontPt && rearPt) {
-        headingVec = frontPt.clone().sub(rearPt);
-        headingVec.y = 0;
-        if (headingVec.lengthSq() < 1e-6) headingVec.set(0, 0, 1);
-        headingVec.normalize();
-      }
-
-      const geo = geoFrame.localToGeo(center);
-      const axisLen = Math.hypot(ann.front[0] - ann.rear[0], ann.front[1] - ann.rear[1]);
-      const confidence = ann.confidence ?? 1.0; // detector's value for auto path; 1.0 for manual
-      const range = center.distanceTo(shotCam.position);
-      const rayDirY = center.clone().sub(shotCam.position).normalize().y;
-      const uncertaintyM = estimateGeoUncertaintyM(
-        range,
-        pose.camera.fovDeg,
-        image.height,
-        rayDirY
-      );
-
-      detectionLayer.spawn(
-        center,
-        Math.atan2(headingVec.x, headingVec.z),
-        ann.cls,
-        `${ann.cls === 'armored_fighting_vehicle' ? 'AFV' : ann.cls === 'light_military_vehicle' ? 'LMV' : 'AIR'}-${placed + 1}`,
-        { confidence, uncertaintyM }
-      );
-
-      detections.push({
-        detection_id: crypto.randomUUID(),
-        image_id: imageId,
-        class: ann.cls,
-        confidence,
-        bbox_pixel: {
-          x: Math.round(cx),
-          y: Math.round(cy),
-          w: Math.round(axisLen),
-          h: Math.round(ann.halfWidthPx * 2),
-          theta: Math.atan2(ann.front[1] - ann.rear[1], ann.front[0] - ann.rear[0]),
-        },
-        lat: geo.lat,
-        lon: geo.lon,
-        world_heading: geoFrame.compassHeadingDeg(headingVec),
-        heading_confidence: ann.headingConfidence ?? 'high', // detector's value for auto path; manual boxes are exact
-        timestamp: pose.capturedAt,
-        source_image_url: image.name,
-        method: provenance?.method ?? 'manual',
-        model: provenance?.model,
-        detected_at: provenance?.detectedAt,
-        uncertainty_m: uncertaintyM,
-      });
-      placed++;
-    }
-
-    return { detections, placed, failed };
+    return deployAnnotations(
+      { tilesGroup: tiles.group, geoFrame, detectionLayer },
+      pose,
+      annotations,
+      image,
+      provenance
+    );
   }
 
   return {

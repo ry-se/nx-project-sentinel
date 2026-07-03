@@ -1,0 +1,4 @@
+{
+  "image": "no_aircraft_present.png",
+  "ground_truth": [{ "cls": "aircraft", "rear": [200, 100], "front": [200, 60] }]
+}

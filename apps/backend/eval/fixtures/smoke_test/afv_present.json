@@ -1,0 +1,5 @@
+{
+  "image": "afv_present.png",
+  "pose": { "alt_m": 300, "fov_deg": 60 },
+  "ground_truth": [{ "cls": "armored_fighting_vehicle", "rear": [100, 220], "front": [140, 180] }]
+}
