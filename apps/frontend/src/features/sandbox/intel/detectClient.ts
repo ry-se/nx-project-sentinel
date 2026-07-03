@@ -157,11 +157,14 @@ export async function detect(
       front: box.front,
       halfWidthPx: box.halfWidthPx,
       confidence: box.confidence,
+      headingConfidence: box.heading_confidence,
     })),
     model: data.model,
     latencyMs,
   };
 }
+
+const HEADING_CONFIDENCE_VALUES = ['high', 'medium', 'low'];
 
 function isValidDetectApiBox(box: DetectApiBox): boolean {
   return (
@@ -174,6 +177,7 @@ function isValidDetectApiBox(box: DetectApiBox): boolean {
     box.front.length === 2 &&
     box.front.every(Number.isFinite) &&
     Number.isFinite(box.halfWidthPx) &&
-    Number.isFinite(box.confidence)
+    Number.isFinite(box.confidence) &&
+    HEADING_CONFIDENCE_VALUES.includes(box.heading_confidence)
   );
 }

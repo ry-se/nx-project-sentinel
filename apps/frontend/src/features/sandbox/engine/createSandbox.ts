@@ -63,8 +63,9 @@ export interface CameraPose {
 }
 
 /** One annotated (manual or auto-detected) oriented box on the imported image (pixel
- * coords). `confidence` is set by the detector for the auto path; manual boxes leave it
- * undefined and deployFromImage falls back to 1.0 (human-annotated == certain). */
+ * coords). `confidence`/`headingConfidence` are set by the detector for the auto path;
+ * manual boxes leave them undefined and deployFromImage falls back to certain (1.0 /
+ * 'high' — human-annotated boxes are exact). */
 export interface ImageAnnotation {
   id: string;
   cls: DetectionClass;
@@ -72,12 +73,21 @@ export interface ImageAnnotation {
   front: [number, number];
   halfWidthPx: number;
   confidence?: number;
+  headingConfidence?: 'high' | 'medium' | 'low';
 }
 
 export interface DeployResult {
   detections: SentinelDetection[];
   placed: number;
   failed: number;
+}
+
+/** Where a batch of detections being deployed came from — threaded into every resulting
+ * `SentinelDetection.method`/`model`/`detected_at` (W4 provenance). Omitted means manual. */
+export interface DeployProvenance {
+  method: 'manual' | 'auto';
+  model?: string;
+  detectedAt?: string;
 }
 
 export interface SandboxCallbacks {
@@ -102,7 +112,8 @@ export interface Sandbox {
   deployFromImage(
     pose: CameraPose,
     annotations: ImageAnnotation[],
-    image: { width: number; height: number; name: string }
+    image: { width: number; height: number; name: string },
+    provenance?: DeployProvenance
   ): DeployResult;
   clearDetections(): void;
   dispose(): void;
@@ -154,6 +165,31 @@ export function raycastBoundedHit(
   raycaster.far = DEPLOY_RAYCAST_MAX_DISTANCE;
   const hits = raycaster.intersectObject(target, true);
   return hits.length > 0 ? hits[0].point.clone() : null;
+}
+
+/** Assumed pixel-localization error (image px) for a detection's box-center point — a
+ * documented approximation (no eval harness yet to measure a real error rate; see todo
+ * W6), not a measured detector accuracy figure. */
+export const ASSUMED_PIXEL_ERROR_PX = 3;
+
+/** Rough CEP-style ground-placement uncertainty in metres: pixel error converted to
+ * ground distance via the ground-sample-distance at `range` (vertical FOV convention,
+ * matching this codebase's `PerspectiveCamera(fovDeg, ...)` usage), scaled by an
+ * obliquity correction — a grazing ray (rayDirY near 0, near-horizontal) covers far more
+ * ground per pixel than a near-nadir one (rayDirY near -1) at the same range, so the
+ * same pixel error implies a larger ground uncertainty. `rayDirY` is the normalized
+ * camera-to-hit-point ray's Y component; floored at 0.15 so a near-horizontal shot
+ * doesn't blow the estimate up unboundedly. */
+export function estimateGeoUncertaintyM(
+  range: number,
+  fovDeg: number,
+  imageHeightPx: number,
+  rayDirY: number
+): number {
+  const fovRad = (fovDeg * Math.PI) / 180;
+  const metersPerPixel = (2 * range * Math.tan(fovRad / 2)) / imageHeightPx;
+  const obliquity = 1 / Math.max(Math.abs(rayDirY), 0.15);
+  return Math.round(metersPerPixel * ASSUMED_PIXEL_ERROR_PX * obliquity * 10) / 10;
 }
 
 /** Pings the tileset root so Google's verbatim rejection reason can be shown. */
@@ -563,7 +599,8 @@ export function createSandbox(
   function deployFromImage(
     pose: CameraPose,
     annotations: ImageAnnotation[],
-    image: { width: number; height: number; name: string }
+    image: { width: number; height: number; name: string },
+    provenance?: DeployProvenance
   ): DeployResult {
     // Reconstruct the camera exactly as it was at screenshot time
     const shotCam = new PerspectiveCamera(pose.camera.fovDeg, image.width / image.height, 1, 50000);
@@ -606,19 +643,29 @@ export function createSandbox(
 
       const geo = geoFrame.localToGeo(center);
       const axisLen = Math.hypot(ann.front[0] - ann.rear[0], ann.front[1] - ann.rear[1]);
+      const confidence = ann.confidence ?? 1.0; // detector's value for auto path; 1.0 for manual
+      const range = center.distanceTo(shotCam.position);
+      const rayDirY = center.clone().sub(shotCam.position).normalize().y;
+      const uncertaintyM = estimateGeoUncertaintyM(
+        range,
+        pose.camera.fovDeg,
+        image.height,
+        rayDirY
+      );
 
       detectionLayer.spawn(
         center,
         Math.atan2(headingVec.x, headingVec.z),
         ann.cls,
-        `${ann.cls === 'armored_fighting_vehicle' ? 'AFV' : ann.cls === 'light_military_vehicle' ? 'LMV' : 'AIR'}-${placed + 1}`
+        `${ann.cls === 'armored_fighting_vehicle' ? 'AFV' : ann.cls === 'light_military_vehicle' ? 'LMV' : 'AIR'}-${placed + 1}`,
+        { confidence, uncertaintyM }
       );
 
       detections.push({
         detection_id: crypto.randomUUID(),
         image_id: imageId,
         class: ann.cls,
-        confidence: ann.confidence ?? 1.0, // detector's value for auto path; 1.0 for manual
+        confidence,
         bbox_pixel: {
           x: Math.round(cx),
           y: Math.round(cy),
@@ -629,9 +676,13 @@ export function createSandbox(
         lat: geo.lat,
         lon: geo.lon,
         world_heading: geoFrame.compassHeadingDeg(headingVec),
-        heading_confidence: 'high',
+        heading_confidence: ann.headingConfidence ?? 'high', // detector's value for auto path; manual boxes are exact
         timestamp: pose.capturedAt,
         source_image_url: image.name,
+        method: provenance?.method ?? 'manual',
+        model: provenance?.model,
+        detected_at: provenance?.detectedAt,
+        uncertainty_m: uncertaintyM,
       });
       placed++;
     }

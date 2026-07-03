@@ -1,5 +1,6 @@
-import { detect, DetectClientError } from './detectClient';
 import type { CameraPose } from '../engine/createSandbox';
+
+import { detect, DetectClientError } from './detectClient';
 
 const POSE: CameraPose = {
   type: 'sentinel-camera-pose',
@@ -72,10 +73,62 @@ describe('detectClient.detect', () => {
         front: [10, 40],
         halfWidthPx: 15,
         confidence: 0.87,
+        headingConfidence: 'high',
       },
     ]);
     expect(result.model).toBe('qwen2.5vl:3b');
     expect(result.latencyMs).toBe(42.5);
+  });
+
+  it('carries heading_confidence through to headingConfidence — regression guard for the W4 drop', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [
+            {
+              id: 'vlm-0',
+              cls: 'aircraft',
+              rear: [0, 0],
+              front: [0, 5],
+              halfWidthPx: 5,
+              confidence: 0.6,
+              heading_confidence: 'medium',
+            },
+          ],
+          model: 'x',
+          latency_ms: 1,
+        })
+      )
+    );
+
+    const result = await detect('img', POSE, IMAGE);
+    expect(result.annotations[0].headingConfidence).toBe('medium');
+  });
+
+  it('throws invalid_response when heading_confidence is not one of high/medium/low', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          annotations: [
+            {
+              id: 'vlm-0',
+              cls: 'aircraft',
+              rear: [0, 0],
+              front: [0, 5],
+              halfWidthPx: 5,
+              confidence: 0.6,
+              heading_confidence: 'certain', // not a valid enum value
+            },
+          ],
+          model: 'x',
+          latency_ms: 1,
+        })
+      )
+    );
+
+    await expect(detect('img', POSE, IMAGE)).rejects.toMatchObject({ kind: 'invalid_response' });
   });
 
   it('sends pose mapped to the backend snake_case contract', async () => {

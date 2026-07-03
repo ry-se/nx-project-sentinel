@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { IntelImport } from './IntelImport';
-import type { CameraPose, DeployResult } from './engine/createSandbox';
+import type { CameraPose, DeployProvenance, DeployResult } from './engine/createSandbox';
 import { DetectClientError } from './intel/detectClient';
 
 vi.mock('./intel/detectClient', async () => {
@@ -61,7 +61,8 @@ describe('IntelImport — auto-detect wiring', () => {
       (
         pose: CameraPose,
         annotations: import('./engine/createSandbox').ImageAnnotation[],
-        image: { width: number; height: number; name: string }
+        image: { width: number; height: number; name: string },
+        provenance?: DeployProvenance
       ) => DeployResult
     >();
   const onClose = vi.fn();
@@ -119,10 +120,93 @@ describe('IntelImport — auto-detect wiring', () => {
       expect.objectContaining({ type: 'sentinel-camera-pose' }),
       expect.objectContaining({ name: 'shot.png' })
     );
-    const [, annotations] = onDeploy.mock.calls[0];
+    const [, annotations, , provenance] = onDeploy.mock.calls[0];
     expect(annotations).toHaveLength(1);
     expect(annotations[0].confidence).toBe(0.9); // detector's value, not a client-side 1.0
     expect(screen.getByText(/Deployed 1 detection/i)).toBeInTheDocument();
+    // W4: auto path carries real provenance — never a client-fabricated value.
+    expect(provenance?.method).toBe('auto');
+    expect(provenance?.model).toBe('fixture-model');
+    expect(provenance?.detectedAt).toBeTruthy();
+  });
+
+  it('review toggle ON holds auto-detect results for accept/reject instead of deploying immediately', async () => {
+    vi.mocked(detect).mockResolvedValue({
+      annotations: [
+        {
+          id: 'vlm-0',
+          cls: 'armored_fighting_vehicle',
+          rear: [10, 20],
+          front: [10, 40],
+          halfWidthPx: 15,
+          confidence: 0.9,
+        },
+        {
+          id: 'vlm-1',
+          cls: 'aircraft',
+          rear: [50, 60],
+          front: [50, 80],
+          halfWidthPx: 10,
+          confidence: 0.4,
+        },
+      ],
+      model: 'fixture-model',
+      latencyMs: 120,
+    });
+    onDeploy.mockReturnValue({ detections: [], placed: 1, failed: 0 });
+
+    render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
+    await loadImage();
+
+    fireEvent.click(screen.getByLabelText(/require human confirmation/i));
+    fireEvent.click(screen.getByRole('button', { name: /auto-detect/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/review required before deploy/i)).toBeInTheDocument()
+    );
+    expect(onDeploy).not.toHaveBeenCalled();
+
+    // Reject the second (low-confidence) detection, then confirm.
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole('button', { name: /confirm & deploy 1/i }));
+
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+    const [, annotations, , provenance] = onDeploy.mock.calls[0];
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0].id).toBe('vlm-0');
+    expect(provenance?.method).toBe('auto');
+  });
+
+  it('review toggle ON — discard clears the pending review without deploying', async () => {
+    vi.mocked(detect).mockResolvedValue({
+      annotations: [
+        {
+          id: 'vlm-0',
+          cls: 'armored_fighting_vehicle',
+          rear: [10, 20],
+          front: [10, 40],
+          halfWidthPx: 15,
+          confidence: 0.9,
+        },
+      ],
+      model: 'fixture-model',
+      latencyMs: 120,
+    });
+
+    render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
+    await loadImage();
+
+    fireEvent.click(screen.getByLabelText(/require human confirmation/i));
+    fireEvent.click(screen.getByRole('button', { name: /auto-detect/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/review required before deploy/i)).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole('button', { name: /discard/i }));
+
+    expect(screen.queryByText(/review required before deploy/i)).not.toBeInTheDocument();
+    expect(onDeploy).not.toHaveBeenCalled();
   });
 
   it('shows a clear error message when the backend is down — no crash', async () => {
@@ -221,7 +305,8 @@ describe('IntelImport — auto-detect wiring', () => {
 
     await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
     expect(detect).not.toHaveBeenCalled();
-    const [, annotations] = onDeploy.mock.calls[0];
+    const [, annotations, , provenance] = onDeploy.mock.calls[0];
     expect(annotations[0].confidence).toBeUndefined(); // manual box: no client-side confidence
+    expect(provenance).toEqual({ method: 'manual' }); // W4: manual boxes carry manual provenance
   });
 });

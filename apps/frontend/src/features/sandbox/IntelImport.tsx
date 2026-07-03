@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { CameraPose, DeployResult, ImageAnnotation } from './engine/createSandbox';
+import type {
+  CameraPose,
+  DeployProvenance,
+  DeployResult,
+  ImageAnnotation,
+} from './engine/createSandbox';
 import { DETECTION_CLASSES, type DetectionClass } from './engine/detections';
 import { detect, DetectClientError } from './intel/detectClient';
 import { drawOBB } from './intel/renderDetectionBox';
@@ -13,13 +18,25 @@ type AutoDetectState =
   | { status: 'error'; message: string }
   | { status: 'empty' };
 
+/** Auto-detect results awaiting analyst accept/reject — only populated when the review
+ * toggle is ON (default OFF, so the automated path stays default per F1). */
+interface PendingReview {
+  pose: CameraPose;
+  image: { width: number; height: number; name: string };
+  annotations: ImageAnnotation[];
+  accepted: Set<string>;
+  model: string;
+  detectedAt: string;
+}
+
 interface IntelImportProps {
   /** Current camera pose, used to prefill the pose field. */
   currentPose: CameraPose | null;
   onDeploy(
     pose: CameraPose,
     annotations: ImageAnnotation[],
-    image: { width: number; height: number; name: string }
+    image: { width: number; height: number; name: string },
+    provenance?: DeployProvenance
   ): DeployResult;
   onClose(): void;
 }
@@ -49,6 +66,11 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
 
   const [result, setResult] = useState<DeployResult | null>(null);
   const [autoState, setAutoState] = useState<AutoDetectState>({ status: 'idle' });
+  // Optional human-confirm gate (W4) — defaults OFF so the automated no-human-in-loop
+  // path (F1) stays the default; ON routes auto-detect results through pendingReview
+  // instead of deploying immediately.
+  const [reviewMode, setReviewMode] = useState(false);
+  const [pendingReview, setPendingReview] = useState<PendingReview | null>(null);
   // What the model actually returned for the last auto-detect run — kept separate from
   // `result` (the deploy outcome) so the result view can show "what the model saw" even
   // though the automated path deploys immediately (no human-in-the-loop gate, per F1).
@@ -74,6 +96,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       setPhase({ step: 'idle' });
       setResult(null);
       setLastDetected(null);
+      setPendingReview(null);
     };
     img.src = url;
   };
@@ -197,7 +220,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
         );
       }
     }
-    setResult(onDeploy(pose, annotations, { ...imageSize, name: imageName }));
+    setResult(onDeploy(pose, annotations, { ...imageSize, name: imageName }, { method: 'manual' }));
   };
 
   // ---------- auto-detect (no manual boxes) ----------
@@ -263,7 +286,26 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
         return;
       }
       setAutoState({ status: 'idle' });
-      setResult(onDeploy(pose, detected, { ...imageSize, name: imageName }));
+      const detectedAt = new Date().toISOString();
+      if (reviewMode) {
+        setPendingReview({
+          pose,
+          image: { ...imageSize, name: imageName },
+          annotations: detected,
+          accepted: new Set(detected.map((a) => a.id)),
+          model,
+          detectedAt,
+        });
+        return;
+      }
+      setResult(
+        onDeploy(
+          pose,
+          detected,
+          { ...imageSize, name: imageName },
+          { method: 'auto', model, detectedAt }
+        )
+      );
     } catch (err) {
       const message =
         err instanceof DetectClientError
@@ -272,6 +314,36 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       if (!(err instanceof DetectClientError)) console.error('[auto-detect]', err);
       setAutoState({ status: 'error', message });
     }
+  };
+
+  // ---------- pending review (human-confirm toggle) ----------
+
+  const toggleAccepted = (id: string): void => {
+    setPendingReview((prev) => {
+      if (!prev) return prev;
+      const accepted = new Set(prev.accepted);
+      if (accepted.has(id)) accepted.delete(id);
+      else accepted.add(id);
+      return { ...prev, accepted };
+    });
+  };
+
+  const confirmReview = (): void => {
+    if (!pendingReview) return;
+    const accepted = pendingReview.annotations.filter((a) => pendingReview.accepted.has(a.id));
+    setResult(
+      onDeploy(pendingReview.pose, accepted, pendingReview.image, {
+        method: 'auto',
+        model: pendingReview.model,
+        detectedAt: pendingReview.detectedAt,
+      })
+    );
+    setPendingReview(null);
+  };
+
+  const discardReview = (): void => {
+    setPendingReview(null);
+    setAutoState({ status: 'idle' });
   };
 
   // ---------- render ----------
@@ -338,6 +410,49 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                 onClick={onClose}
               >
                 Done — view world
+              </button>
+            </div>
+          </div>
+        ) : pendingReview ? (
+          <div className="flex flex-col gap-3">
+            <div className="alert alert-warning text-sm">
+              Review required before deploy — model={pendingReview.model} ·{' '}
+              {pendingReview.annotations.length} detection
+              {pendingReview.annotations.length === 1 ? '' : 's'} found. Uncheck any you don't want
+              deployed.
+            </div>
+            <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+              {pendingReview.annotations.map((a, i) => (
+                <label
+                  key={a.id}
+                  className="flex items-center gap-2 rounded-lg bg-base-200 px-2 py-1"
+                >
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm"
+                    checked={pendingReview.accepted.has(a.id)}
+                    onChange={() => toggleAccepted(a.id)}
+                  />
+                  <span className="text-xs font-bold text-red-500">#{i + 1}</span>
+                  <span className="flex-1 text-sm">{a.cls}</span>
+                  {a.confidence !== undefined && (
+                    <span className="text-xs text-base-content/50">
+                      {(a.confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn btn-sm" onClick={discardReview}>
+                Discard
+              </button>
+              <button
+                className="btn btn-sm border-none bg-emerald-600 text-white hover:bg-emerald-700"
+                disabled={pendingReview.accepted.size === 0}
+                onClick={confirmReview}
+              >
+                Confirm &amp; deploy {pendingReview.accepted.size}
               </button>
             </div>
           </div>
@@ -436,6 +551,16 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                   </div>
                 )}
 
+                <label className="flex items-center gap-2 text-xs text-base-content/60">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-xs"
+                    checked={reviewMode}
+                    onChange={(e) => setReviewMode(e.target.checked)}
+                  />
+                  Require human confirmation before deploy
+                </label>
+
                 <button
                   className="btn border-none bg-emerald-600 text-white hover:bg-emerald-700"
                   disabled={!imageSize || !poseText.trim() || autoState.status === 'loading'}
@@ -450,7 +575,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                       <span role="img" aria-label="robot">
                         🤖
                       </span>{' '}
-                      Auto-detect &amp; deploy
+                      {reviewMode ? 'Auto-detect' : 'Auto-detect & deploy'}
                     </>
                   )}
                 </button>

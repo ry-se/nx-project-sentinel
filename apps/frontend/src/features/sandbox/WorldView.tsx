@@ -73,19 +73,25 @@ export function WorldView() {
         setLoading(false);
         return;
       }
-      const selectedLocation = SPAWN_LOCATIONS.find((item) => item.key === spawnLocationKey) ?? SPAWN_LOCATIONS[0];
-      sandbox = createSandbox(canvas, apiKey, { lat: selectedLocation.lat, lon: selectedLocation.lon }, {
-        onStatus: setStatus,
-        onHud: (text) => setHudLines(text.split('\n')),
-        onMode: setMode,
-        onVehicle: setActiveVehicle,
-        onAttributions: setAttributions,
-        onTilesLoaded: () => setLoading(false),
-        onError: (message) => {
-          setFatal(message);
-          setLoading(false);
-        },
-      });
+      const selectedLocation =
+        SPAWN_LOCATIONS.find((item) => item.key === spawnLocationKey) ?? SPAWN_LOCATIONS[0];
+      sandbox = createSandbox(
+        canvas,
+        apiKey,
+        { lat: selectedLocation.lat, lon: selectedLocation.lon },
+        {
+          onStatus: setStatus,
+          onHud: (text) => setHudLines(text.split('\n')),
+          onMode: setMode,
+          onVehicle: setActiveVehicle,
+          onAttributions: setAttributions,
+          onTilesLoaded: () => setLoading(false),
+          onError: (message) => {
+            setFatal(message);
+            setLoading(false);
+          },
+        }
+      );
       sandboxRef.current = sandbox;
     });
 
@@ -207,7 +213,10 @@ export function WorldView() {
             <button
               key={v.id}
               className="btn btn-ghost btn-sm justify-start font-normal"
-              onClick={() => { sandboxRef.current?.switchVehicle(v.id); setActiveVehicle(v.id); }}
+              onClick={() => {
+                sandboxRef.current?.switchVehicle(v.id);
+                setActiveVehicle(v.id);
+              }}
             >
               <kbd className="kbd kbd-xs">{v.key}</kbd> {v.label}
             </button>
@@ -253,10 +262,12 @@ export function WorldView() {
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
               Camera pose
             </div>
-            <div>lat {pose.camera.geo.lat.toFixed(6)}  lon {pose.camera.geo.lon.toFixed(6)}</div>
             <div>
-              alt {pose.camera.geo.altM.toFixed(0)} m · hdg {pose.camera.geo.headingDeg.toFixed(1)}° ·
-              pitch {pose.camera.geo.pitchDeg.toFixed(1)}° · fov {pose.camera.fovDeg.toFixed(0)}°
+              lat {pose.camera.geo.lat.toFixed(6)} lon {pose.camera.geo.lon.toFixed(6)}
+            </div>
+            <div>
+              alt {pose.camera.geo.altM.toFixed(0)} m · hdg {pose.camera.geo.headingDeg.toFixed(1)}°
+              · pitch {pose.camera.geo.pitchDeg.toFixed(1)}° · fov {pose.camera.fovDeg.toFixed(0)}°
             </div>
           </div>
           <div className="flex gap-1">
@@ -291,9 +302,9 @@ export function WorldView() {
       {showImport && (
         <IntelImport
           currentPose={pose}
-          onDeploy={(p, anns, img) =>
+          onDeploy={(p, anns, img, provenance) =>
             sandboxRef.current
-              ? sandboxRef.current.deployFromImage(p, anns, img)
+              ? sandboxRef.current.deployFromImage(p, anns, img, provenance)
               : { detections: [], placed: 0, failed: anns.length }
           }
           onClose={() => setShowImport(false)}
@@ -321,7 +332,10 @@ export function WorldView() {
           <div className="rounded-box max-w-md bg-base-100 p-6 text-center shadow-md">
             <div className="mb-2 text-lg font-semibold text-red-500">Tile service error</div>
             <p className="mb-4 text-sm text-base-content/70">{fatal}</p>
-            <button className="btn btn-sm border-none bg-indigo-600 text-white hover:bg-indigo-700" onClick={resetKey}>
+            <button
+              className="btn btn-sm border-none bg-indigo-600 text-white hover:bg-indigo-700"
+              onClick={resetKey}
+            >
               Reset API key
             </button>
           </div>
@@ -334,8 +348,8 @@ export function WorldView() {
           <div className="rounded-box w-full max-w-lg bg-base-100 p-8 shadow-md">
             <div className="mb-1 text-xl font-bold">🛰 Google Map Tiles API key</div>
             <p className="mb-4 text-sm text-base-content/60">
-              Enable <b>Map Tiles API</b> in Google Cloud Console, create an API key, and
-              paste it here. Stored only in this browser&apos;s localStorage.
+              Enable <b>Map Tiles API</b> in Google Cloud Console, create an API key, and paste it
+              here. Stored only in this browser&apos;s localStorage.
             </p>
             <div className="flex gap-2">
               <input

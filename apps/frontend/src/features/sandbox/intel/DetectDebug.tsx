@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { CameraPose } from '../engine/createSandbox';
+
 import { detect, DetectClientError, type DetectResult } from './detectClient';
 import { drawOBB } from './renderDetectionBox';
 
@@ -203,7 +204,7 @@ export function DetectDebug() {
                 {result.annotations.map((a, i) => (
                   <div key={a.id} className="rounded-lg bg-base-200 px-2 py-1 text-xs">
                     <span className="font-bold text-emerald-600">#{i + 1}</span> {a.cls} · conf=
-                    {a.confidence?.toFixed(2) ?? 'n/a'}
+                    {a.confidence?.toFixed(2) ?? 'n/a'} · heading={a.headingConfidence ?? 'n/a'}
                   </div>
                 ))}
               </div>

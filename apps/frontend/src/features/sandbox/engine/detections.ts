@@ -14,10 +14,7 @@ import {
 
 import type { ModelLibrary } from './modelCatalog';
 
-export type DetectionClass =
-  | 'armored_fighting_vehicle'
-  | 'light_military_vehicle'
-  | 'aircraft';
+export type DetectionClass = 'armored_fighting_vehicle' | 'light_military_vehicle' | 'aircraft';
 
 export const DETECTION_CLASSES: Array<{ id: DetectionClass; label: string }> = [
   { id: 'armored_fighting_vehicle', label: 'AFV (tank)' },
@@ -25,7 +22,9 @@ export const DETECTION_CLASSES: Array<{ id: DetectionClass; label: string }> = [
   { id: 'aircraft', label: 'Aircraft' },
 ];
 
-/** Locked Sentinel detection schema — the AI service must emit this too. */
+/** Locked Sentinel detection schema — the AI service must emit this too.
+ * `method`/`model`/`detected_at`/`uncertainty_m` are additive (W4) — existing consumers
+ * that only read the original fields are unaffected. */
 export interface SentinelDetection {
   detection_id: string;
   image_id: string;
@@ -38,10 +37,27 @@ export interface SentinelDetection {
   heading_confidence: 'high' | 'medium' | 'low';
   timestamp: string;
   source_image_url: string;
+  /** How this detection was produced — every detection is one or the other. */
+  method: 'manual' | 'auto';
+  /** Detector model id — present only for `method: 'auto'`. */
+  model?: string;
+  /** When the detector produced this box (ISO 8601) — present only for `method: 'auto'`. */
+  detected_at?: string;
+  /** Rough CEP-style ground-placement uncertainty in metres — see `estimateGeoUncertaintyM`
+   * in createSandbox.ts for the (documented-approximation) derivation. */
+  uncertainty_m?: number;
 }
 
 const HOSTILE_RED = 0x8c1f1f;
 const HOSTILE_DARK = 0x4d1212;
+
+/** Maps detection confidence [0,1] to ring opacity so low-confidence detections render
+ * visibly fainter than high-confidence ones. 1.0 confidence -> 0.7 opacity, matching the
+ * pre-W4 constant so fully-confident (and manual) detections render unchanged. */
+export function confidenceToRingOpacity(confidence: number): number {
+  const clamped = Math.min(1, Math.max(0, confidence));
+  return 0.2 + clamped * 0.5;
+}
 
 const CLASS_TO_ASSET: Record<DetectionClass, string> = {
   armored_fighting_vehicle: 'tank',
@@ -59,19 +75,30 @@ export class DetectionLayer {
     scene.add(this.root);
   }
 
-  public spawn(localPos: Vector3, localYaw: number, cls: DetectionClass, name: string): void {
+  public spawn(
+    localPos: Vector3,
+    localYaw: number,
+    cls: DetectionClass,
+    name: string,
+    opts?: { confidence?: number; uncertaintyM?: number }
+  ): void {
     const group = new Group();
     group.add(this.lib.instance(CLASS_TO_ASSET[cls], () => buildModel(cls), HOSTILE_RED));
 
     const ring = new Mesh(
       new RingGeometry(4.2, 4.8, 32),
-      new MeshStandardMaterial({ color: 0xff3b30, transparent: true, opacity: 0.7 })
+      new MeshStandardMaterial({
+        color: 0xff3b30,
+        transparent: true,
+        opacity: confidenceToRingOpacity(opts?.confidence ?? 1.0),
+      })
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.15;
     group.add(ring);
 
-    group.add(makeTag(name));
+    const label = opts?.uncertaintyM !== undefined ? `${name} ±${opts.uncertaintyM}m` : name;
+    group.add(makeTag(label));
 
     group.position.copy(localPos);
     group.rotation.y = localYaw;
