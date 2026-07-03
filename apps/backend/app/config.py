@@ -23,6 +23,21 @@ class Settings(BaseSettings):
     detector_model: str = ""
     detector_base_url: str = ""
     detector_api_key: str | None = None
+    # Reasoning-model effort level ("low"/"medium"/"high") — empty (default) means the
+    # configured model isn't a reasoning model; unset skips both this param AND
+    # temperature=0.0 in the same request (reasoning models reject an explicit
+    # temperature — see vision_adapter.py::_call_provider).
+    detector_reasoning_effort: str = ""
+    # Some models reject an explicit temperature regardless of reasoning_effort — verified
+    # live against gpt-5.5 with reasoning_effort unset. Decoupled from
+    # detector_reasoning_effort on purpose: don't guess this from a model-name pattern.
+    detector_omit_temperature: bool = False
+    # Splits the capture into overlapping tiles before detection — the fix for the
+    # imprecise/inconsistent full-image coordinates traced in
+    # workspaces/sentinel/journal/0008-0011. Defaults ON (it's the shipped fix); env-gated
+    # so the untiled single-shot path stays available for comparison/debugging (todo 03b
+    # invariant 2) without a code change.
+    detector_tiling_enabled: bool = True
     cors_allowed_origins: str = "http://localhost:4200"
 
     @property

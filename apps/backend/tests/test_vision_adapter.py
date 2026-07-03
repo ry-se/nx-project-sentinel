@@ -48,6 +48,24 @@ async def test_markdown_fenced_response_is_stripped(monkeypatch):
     assert len(boxes) == 1
 
 
+async def test_reasoning_text_before_fence_is_extracted(monkeypatch):
+    """Regression guard for journal/0013 — the prompt now allows brief per-object
+    reasoning before the final answer; the parser must pull the JSON from the LAST fence,
+    not assume the whole response is bare JSON (which broke the old fence-at-start-only
+    stripping when the model reasons first)."""
+    adapter = _adapter()
+    response_with_reasoning = (
+        "1. Tank 1: turret direction indicates the front.\n"
+        "2. Tank 2: turret direction indicates the front.\n\n"
+        "```json\n" + VALID_FIXTURE_RESPONSE + "\n```"
+    )
+    monkeypatch.setattr(adapter, "_call_provider", _fixture(response_with_reasoning))
+
+    boxes = await adapter.detect(b"fake-image-bytes")
+    assert len(boxes) == 1  # same fixture as the other fence tests — submarine dropped
+    assert boxes[0].cls == "armored_fighting_vehicle"
+
+
 async def test_malformed_json_raises_detector_error(monkeypatch):
     adapter = _adapter()
     monkeypatch.setattr(adapter, "_call_provider", _fixture("not json at all {"))
@@ -254,6 +272,193 @@ async def test_pose_is_included_in_prompt_context():
     assert "altitude 500m" in prompt_text
 
 
+async def test_image_request_pins_high_detail(monkeypatch):
+    """Regression guard for journal/0012 — the provider's detail level MUST be pinned
+    explicitly, not left to an opaque 'auto' heuristic."""
+    adapter = _adapter()
+    captured_payloads = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "[]"}}]}
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json, headers):
+            captured_payloads.append(json)
+            return _FakeResponse()
+
+    import httpx2 as httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: _FakeClient())
+    await adapter.detect(b"fake-image-bytes")
+
+    image_content = captured_payloads[0]["messages"][0]["content"][1]
+    assert image_content["type"] == "image_url"
+    assert image_content["image_url"]["detail"] == "high"
+
+
+def _capturing_client(captured_payloads: list):
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "[]"}}]}
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json, headers):
+            captured_payloads.append(json)
+            return _FakeResponse()
+
+    return _FakeClient
+
+
+async def test_reasoning_effort_omits_temperature(monkeypatch):
+    """Regression guard: gpt-5.5 (and o-series) reject an explicit temperature —
+    'temperature' does not support 0.0 with this model' — verified against the real API
+    before shipping. reasoning_effort and temperature are mutually exclusive in the
+    outgoing payload."""
+    adapter = VisionLanguageModelAdapter(
+        base_url="https://api.example.com/v1",
+        model="fixture-reasoning-model",
+        api_key="k",
+        reasoning_effort="medium",
+    )
+    captured_payloads: list = []
+    import httpx2 as httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: _capturing_client(captured_payloads)())
+    await adapter.detect(b"fake-image-bytes")
+
+    payload = captured_payloads[0]
+    assert payload["reasoning_effort"] == "medium"
+    assert "temperature" not in payload
+
+
+async def test_no_reasoning_effort_keeps_temperature_zero(monkeypatch):
+    """Non-reasoning models (the default — gpt-4o, qwen2.5vl) are unchanged: still
+    temperature=0.0, no reasoning_effort key at all."""
+    adapter = _adapter()  # no reasoning_effort passed
+    captured_payloads: list = []
+    import httpx2 as httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: _capturing_client(captured_payloads)())
+    await adapter.detect(b"fake-image-bytes")
+
+    payload = captured_payloads[0]
+    assert payload["temperature"] == 0.0
+    assert "reasoning_effort" not in payload
+
+
+async def test_reasoning_effort_uses_longer_http_timeout(monkeypatch):
+    """Regression guard: reasoning-effort calls routinely take 40-60s+ per tile — verified
+    live, the old flat 60s timeout silently discarded 3 of 6 real tiles as failures."""
+    adapter = VisionLanguageModelAdapter(
+        base_url="https://api.example.com/v1",
+        model="fixture-reasoning-model",
+        api_key="k",
+        reasoning_effort="medium",
+    )
+    captured_kwargs: list = []
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json, headers):
+            class _R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"choices": [{"message": {"content": "[]"}}]}
+
+            return _R()
+
+    import httpx2 as httpx
+
+    def _fake_async_client(*a, **kw):
+        captured_kwargs.append(kw)
+        return _FakeClient()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _fake_async_client)
+    await adapter.detect(b"fake-image-bytes")
+
+    assert captured_kwargs[0]["timeout"] == 180.0
+
+
+async def test_no_reasoning_effort_keeps_short_http_timeout(monkeypatch):
+    adapter = _adapter()
+    captured_kwargs: list = []
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json, headers):
+            class _R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"choices": [{"message": {"content": "[]"}}]}
+
+            return _R()
+
+    import httpx2 as httpx
+
+    def _fake_async_client(*a, **kw):
+        captured_kwargs.append(kw)
+        return _FakeClient()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _fake_async_client)
+    await adapter.detect(b"fake-image-bytes")
+
+    assert captured_kwargs[0]["timeout"] == 60.0
+
+
+async def test_omit_temperature_alone_drops_temperature_without_reasoning_effort(monkeypatch):
+    """Regression guard (journal/0019): gpt-5.5 rejects temperature=0.0 even with NO
+    reasoning_effort set — a model-level restriction, independent of reasoning mode.
+    detector_omit_temperature covers this case without requiring reasoning_effort too."""
+    adapter = VisionLanguageModelAdapter(
+        base_url="https://api.example.com/v1",
+        model="fixture-model",
+        api_key="k",
+        omit_temperature=True,
+    )
+    captured_payloads: list = []
+    import httpx2 as httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: _capturing_client(captured_payloads)())
+    await adapter.detect(b"fake-image-bytes")
+
+    payload = captured_payloads[0]
+    assert "temperature" not in payload
+    assert "reasoning_effort" not in payload
+
+
 def test_constructor_requires_base_url_and_model():
     with pytest.raises(DetectorError):
         VisionLanguageModelAdapter(base_url="", model="qwen2.5vl:3b", api_key=None)
@@ -267,7 +472,16 @@ def test_get_detector_selects_stub():
 
 
 def test_get_detector_selects_vlm_local_with_resolved_defaults():
-    settings = Settings(detector_provider="vlm-local")
+    # _env_file=None: this test verifies the resolver's hardcoded per-provider defaults,
+    # not interaction with a real .env — without this, a developer's local .env setting
+    # DETECTOR_BASE_URL/DETECTOR_MODEL (e.g. to run against a hosted API) silently
+    # contaminates this test via Settings' own env_file=".env" config.
+    # detector_tiling_enabled=False: this test verifies the INNER adapter's resolved
+    # config, not the tiling wrapper — see test_get_detector_wraps_vlm_in_tiling_by_default
+    # for that.
+    settings = Settings(
+        _env_file=None, detector_provider="vlm-local", detector_tiling_enabled=False
+    )
     detector = get_detector(settings)
     assert isinstance(detector, VisionLanguageModelAdapter)
     assert detector._base_url == "http://localhost:11434/v1"
@@ -280,8 +494,34 @@ def test_get_detector_selects_vlm_api_with_explicit_config():
         detector_base_url="https://api.example.com/v1",
         detector_model="qwen2.5-vl-72b",
         detector_api_key="secret",
+        detector_tiling_enabled=False,
     )
     detector = get_detector(settings)
     assert isinstance(detector, VisionLanguageModelAdapter)
     assert detector._base_url == "https://api.example.com/v1"
     assert detector._model == "qwen2.5-vl-72b"
+
+
+def test_get_detector_wraps_vlm_in_tiling_by_default():
+    """todo 03b — tiling is the shipped default (journal/0008-0011 evidence)."""
+    from app.detector.tiling import TilingDetector
+
+    settings = Settings(_env_file=None, detector_provider="vlm-local")
+    detector = get_detector(settings)
+    assert isinstance(detector, TilingDetector)
+    assert isinstance(detector._inner, VisionLanguageModelAdapter)
+
+
+def test_get_detector_tiling_disabled_returns_raw_adapter():
+    """todo 03b invariant 2 — the untiled single-shot path stays available, env-gated."""
+    settings = Settings(
+        _env_file=None, detector_provider="vlm-local", detector_tiling_enabled=False
+    )
+    detector = get_detector(settings)
+    assert isinstance(detector, VisionLanguageModelAdapter)
+
+
+def test_get_detector_stub_is_never_tiled():
+    """Tiling a fixture response serves no purpose — stub is exempt regardless of the flag."""
+    settings = Settings(detector_provider="stub", detector_tiling_enabled=True)
+    assert isinstance(get_detector(settings), StubDetector)

@@ -16,17 +16,25 @@ logger = structlog.get_logger(__name__)
 MAX_PROVIDER_RESPONSE_CHARS = 2_000_000
 MAX_DETECTIONS_PER_RESPONSE = 200
 
-_PROMPT = """Find every combat vehicle or aircraft in this image. For each object return
-one JSON entry with:
+_PROMPT = """Find every combat vehicle or aircraft in this image.
+
+For EACH object, first briefly note (one short line) which visible feature tells you
+which end is the front — e.g. turret/gun barrel direction, hull taper, track/wheel
+orientation, nose vs tail. Do not assume every object faces the same way; look at each
+one independently. (A terse "always answer the same direction" shortcut here produces
+detections that are wrong every time — see workspaces/sentinel/journal/0013 for the
+regression this closes.)
+
+Then output a JSON array of objects, each with:
 - cls: one of "AFV" (armored fighting vehicle / tank), "LMV" (light military vehicle / \
 truck / car), "aircraft"
 - rear: [x, y] pixel coordinates of the object's rear point
-- front: [x, y] pixel coordinates of the object's front point (the direction it faces)
+- front: [x, y] pixel coordinates of the object's front point, matching the reasoning above
 - box: [x, y, w, h] the object's bounding box in absolute pixel coordinates
 - confidence: a number from 0.0 to 1.0
 
-Respond with ONLY a JSON array of these objects, absolute pixel coordinates, no markdown
-fences, no prose. If no objects are found, respond with []."""
+End your response with the JSON array wrapped in a ```json code fence, and put NOTHING
+after it. If no objects are found, the array is []."""
 
 
 class VisionLanguageModelAdapter(Detector):
@@ -37,7 +45,14 @@ class VisionLanguageModelAdapter(Detector):
     See workspaces/sentinel/01-analysis/03-product-strategy/05-detector-orientation-research.md.
     """
 
-    def __init__(self, base_url: str, model: str, api_key: str | None):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str | None,
+        reasoning_effort: str | None = None,
+        omit_temperature: bool = False,
+    ):
         if not base_url or not model:
             raise DetectorError(
                 "vision adapter requires both a base_url and a model — check "
@@ -46,6 +61,12 @@ class VisionLanguageModelAdapter(Detector):
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
+        self._reasoning_effort = reasoning_effort
+        # Decoupled from reasoning_effort — verified live that gpt-5.5 rejects
+        # temperature=0.0 even with NO reasoning_effort set (a model-level restriction,
+        # not a reasoning-mode-specific one). DETECTOR_OMIT_TEMPERATURE covers that case
+        # without changing default behavior for gpt-4o/qwen2.5vl.
+        self._omit_temperature = omit_temperature
 
     async def detect(self, image_bytes: bytes, pose: ImagePose | None = None) -> list[DetectionBox]:
         raw_text = await self._call_provider(image_bytes, pose)
@@ -75,15 +96,39 @@ class VisionLanguageModelAdapter(Detector):
                         {"type": "text", "text": prompt_text},
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                            # detail="high" pins the provider's best-available image
+                            # processing path explicitly rather than leaving it to an
+                            # opaque "auto" heuristic — see
+                            # workspaces/sentinel/journal/0012 for the analysis this
+                            # closes (a plausible, previously-unpinned contributor to
+                            # run-to-run detection inconsistency).
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_b64}",
+                                "detail": "high",
+                            },
                         },
                     ],
                 }
             ],
-            "temperature": 0.0,
         }
+        if self._reasoning_effort:
+            payload["reasoning_effort"] = self._reasoning_effort
+        # Some models (verified live: gpt-5.5) reject an explicit temperature —
+        # "'temperature' does not support 0.0 with this model. Only the default (1) value
+        # is supported." — verified true BOTH with reasoning_effort active (journal/0018)
+        # AND without it (journal/0019). Active reasoning_effort always implies omitting
+        # temperature too (100% of tested cases so far); detector_omit_temperature covers
+        # the non-reasoning case independently, without forcing callers to set both flags.
+        if not (self._omit_temperature or self._reasoning_effort):
+            payload["temperature"] = 0.0
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            # 60s was tuned for non-reasoning models; reasoning-effort calls (o-series,
+            # gpt-5.x) routinely take 40-60s+ per tile — verified live, 3 of 6 tiles hit
+            # the old 60s ceiling and were silently discarded as failures, undercounting
+            # real detections. 180s gives real headroom without changing non-reasoning
+            # models' behavior (they still return well under this).
+            timeout = 180.0 if self._reasoning_effort else 60.0
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     f"{self._base_url}/chat/completions", json=payload, headers=headers
                 )
@@ -108,12 +153,21 @@ class VisionLanguageModelAdapter(Detector):
             raise DetectorError("detector provider response exceeded the size limit")
 
         text = raw_text.strip()
-        # Models sometimes wrap JSON in markdown fences despite the prompt — strip them.
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text[:4].lower() == "json":
-                text = text[4:]
-            text = text.strip()
+        # The prompt allows brief per-object reasoning before the final answer (see
+        # workspaces/sentinel/journal/0013 — real per-object orientation needs reasoning
+        # room; a terse JSON-only prompt made the model default to a fixed direction every
+        # time). The prompt asks for the JSON array in a fence at the very end, so extract
+        # the LAST fenced block rather than assuming the whole response is bare JSON.
+        # A response with no fence at all (some providers ignore the instruction) falls
+        # through unchanged to the json.loads() below, matching the prior behavior.
+        last_fence = text.rfind("```")
+        if last_fence != -1:
+            opening_fence = text.rfind("```", 0, last_fence)
+            if opening_fence != -1:
+                fenced = text[opening_fence + 3 : last_fence]
+                if fenced[:4].lower() == "json":
+                    fenced = fenced[4:]
+                text = fenced.strip()
         try:
             parsed = json.loads(text)
         except (json.JSONDecodeError, RecursionError, ValueError) as exc:

@@ -12,6 +12,7 @@ dependencies = [
   "structlog>=24.0",
   "slowapi>=0.1",
   "httpx2>=0.1",
+  "pillow>=11.0",
 ]
 
 [dependency-groups]
