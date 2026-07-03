@@ -55,13 +55,20 @@ function getBaseUrl(): string {
   return url.replace(/\/+$/, '');
 }
 
+export interface DetectResult {
+  annotations: ImageAnnotation[];
+  model: string;
+  latencyMs: number;
+}
+
 /** POSTs the image + pose to the detection backend and returns oriented annotations
- * ready to feed straight into deployFromImage — no reshaping downstream. */
+ * ready to feed straight into deployFromImage — no reshaping downstream — plus which
+ * model answered and how long it took, so callers can show what the model actually did. */
 export async function detect(
   imageB64: string,
   pose: CameraPose,
   image: { width: number; height: number; name: string }
-): Promise<ImageAnnotation[]> {
+): Promise<DetectResult> {
   const baseUrl = getBaseUrl();
   const start = performance.now();
   // console.warn, not .log — this repo's eslint config only allows warn/error.
@@ -142,14 +149,18 @@ export async function detect(
       `round-trip ${(performance.now() - start).toFixed(0)}ms (server latency_ms=${latencyMs.toFixed(1)})`
   );
 
-  return data.annotations.map((box) => ({
-    id: box.id,
-    cls: box.cls,
-    rear: box.rear,
-    front: box.front,
-    halfWidthPx: box.halfWidthPx,
-    confidence: box.confidence,
-  }));
+  return {
+    annotations: data.annotations.map((box) => ({
+      id: box.id,
+      cls: box.cls,
+      rear: box.rear,
+      front: box.front,
+      halfWidthPx: box.halfWidthPx,
+      confidence: box.confidence,
+    })),
+    model: data.model,
+    latencyMs,
+  };
 }
 
 function isValidDetectApiBox(box: DetectApiBox): boolean {

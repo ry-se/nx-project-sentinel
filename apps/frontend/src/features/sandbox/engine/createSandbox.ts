@@ -5,6 +5,7 @@ import {
   DirectionalLight,
   Fog,
   MathUtils,
+  type Object3D,
   PerspectiveCamera,
   Quaternion,
   Raycaster,
@@ -32,11 +33,7 @@ import { VehicleManager, type VehicleType } from './vehicles';
 import { BombManager } from './bombs';
 import { GeoFrame } from './geoFrame';
 import { ModelLibrary } from './modelCatalog';
-import {
-  type DetectionClass,
-  DetectionLayer,
-  type SentinelDetection,
-} from './detections';
+import { type DetectionClass, DetectionLayer, type SentinelDetection } from './detections';
 
 export interface SandboxAnchor {
   lat: number;
@@ -135,12 +132,34 @@ function isTyping(e: KeyboardEvent): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
+/** Max distance (local-frame units, ~metres) a deployFromImage raycast may travel before
+ * being treated as a miss. Matches this codebase's own convention for "relevant" raycast
+ * range (vehicleBase.ts uses 1200, labels.ts uses 1500) — every other raycast site in the
+ * engine bounds `far`; this was the sole `Infinity` outlier, and an imprecise detector
+ * pixel coordinate could send an unbounded ray into unrelated terrain far from the capture
+ * point (confirmed root cause of a `lat: 16.83` wild-outlier placement — see
+ * workspaces/sentinel/journal/0012). */
+export const DEPLOY_RAYCAST_MAX_DISTANCE = 1500;
+
+/** Casts a single NDC-space ray at `target`, bounded to `DEPLOY_RAYCAST_MAX_DISTANCE`, and
+ * returns the first hit point or null. Extracted from deployFromImage so the distance
+ * bound is independently testable with real Three.js primitives — no canvas/WebGL needed. */
+export function raycastBoundedHit(
+  raycaster: Raycaster,
+  ndc: Vector2,
+  camera: PerspectiveCamera,
+  target: Object3D
+): Vector3 | null {
+  raycaster.setFromCamera(ndc, camera);
+  raycaster.far = DEPLOY_RAYCAST_MAX_DISTANCE;
+  const hits = raycaster.intersectObject(target, true);
+  return hits.length > 0 ? hits[0].point.clone() : null;
+}
+
 /** Pings the tileset root so Google's verbatim rejection reason can be shown. */
 export async function preflightGoogleKey(apiKey: string): Promise<string | null> {
   try {
-    const resp = await fetch(
-      `https://tile.googleapis.com/v1/3dtiles/root.json?key=${apiKey}`
-    );
+    const resp = await fetch(`https://tile.googleapis.com/v1/3dtiles/root.json?key=${apiKey}`);
     if (resp.ok) return null;
     try {
       const body = (await resp.json()) as { error?: { message?: string } };
@@ -169,12 +188,7 @@ export function createSandbox(
   // everything past ~9 km, masking the real render distance — pushed way out.
   scene.fog = new Fog(0x9fc4e0, 12000, 45000);
 
-  const camera = new PerspectiveCamera(
-    60,
-    window.innerWidth / window.innerHeight,
-    1,
-    50000
-  );
+  const camera = new PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
   camera.position.set(0, 60, -80);
   camera.layers.enable(1); // overlays
 
@@ -185,9 +199,7 @@ export function createSandbox(
 
   // --- Google Photorealistic 3D Tiles ---
   const tiles = new TilesRenderer();
-  tiles.registerPlugin(
-    new GoogleCloudAuthPlugin({ apiToken: apiKey, autoRefreshToken: true })
-  );
+  tiles.registerPlugin(new GoogleCloudAuthPlugin({ apiToken: apiKey, autoRefreshToken: true }));
   const draco = new DRACOLoader();
   draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
   draco.setDecoderConfig({ type: 'wasm' }); // WASM decode (faster than JS fallback)
@@ -213,7 +225,7 @@ export function createSandbox(
   tiles.registerPlugin(loadRegion);
   const playerRegion = new SphereRegion({
     sphere: new Sphere(new Vector3(), 1200), // 1.2 km radius around the player
-    errorTarget: 10,                         // detail inside the bubble (lower = sharper)
+    errorTarget: 10, // detail inside the bubble (lower = sharper)
   });
   loadRegion.addRegion(playerRegion);
 
@@ -232,9 +244,9 @@ export function createSandbox(
   tiles.lruCache.maxSize = 20000;
   tiles.lruCache.minBytesSize = 1.5 * 2 ** 30; // ~1.5 GB retained
   tiles.lruCache.maxBytesSize = 2.5 * 2 ** 30; // ~2.5 GB ceiling (sized to VRAM)
-  tiles.downloadQueue.maxJobs = 40;            // fill a big area fast (default 25)
-  tiles.parseQueue.maxJobs = 8;                // keep decode from bottlenecking (default 5)
-  tiles.displayActiveTiles = true;             // keep region-loaded tiles drawn off-frustum
+  tiles.downloadQueue.maxJobs = 40; // fill a big area fast (default 25)
+  tiles.parseQueue.maxJobs = 8; // keep decode from bottlenecking (default 5)
+  tiles.displayActiveTiles = true; // keep region-loaded tiles drawn off-frustum
 
   scene.add(tiles.group);
 
@@ -251,13 +263,10 @@ export function createSandbox(
       void labels.load(anchor.lat, anchor.lon);
     }
   });
-  tiles.addEventListener(
-    'load-error',
-    (e: { error?: Error; url?: string | URL }) => {
-      console.error('[sandbox] tile load error at', e?.url, e?.error);
-      if (!tilesLoaded) cb.onError(`Tile load error: ${e?.error?.message ?? 'unknown'}`);
-    }
-  );
+  tiles.addEventListener('load-error', (e: { error?: Error; url?: string | URL }) => {
+    console.error('[sandbox] tile load error at', e?.url, e?.error);
+    if (!tilesLoaded) cb.onError(`Tile load error: ${e?.error?.message ?? 'unknown'}`);
+  });
 
   // --- Vehicles + ordnance ---
   const projectiles = new ProjectileManager(scene, tiles.group);
@@ -268,13 +277,7 @@ export function createSandbox(
   // --- Modes + strategist tools ---
   let mode: SandboxMode = 'player';
   const viewshed = new ViewshedController(scene, tiles);
-  const strategist = new StrategistController(
-    camera,
-    canvas,
-    tiles.group,
-    scene,
-    viewshed
-  );
+  const strategist = new StrategistController(camera, canvas, tiles.group, scene, viewshed);
   strategist.onStatus = (text) => {
     if (mode === 'strategist') cb.onStatus(text);
   };
@@ -376,10 +379,15 @@ export function createSandbox(
     // owns ↑↓ for pitch, so this must not apply globally. (Right stick.)
     let arrowYaw = false;
     if (spider) {
-      if (vehicles.held('arrowleft'))  { orbitYaw += 2.0 * dt; arrowYaw = true; }
-      if (vehicles.held('arrowright')) { orbitYaw -= 2.0 * dt; arrowYaw = true; }
-      if (vehicles.held('arrowup'))
-        orbitPitch = MathUtils.clamp(orbitPitch + 1.4 * dt, 0.08, 1.35);
+      if (vehicles.held('arrowleft')) {
+        orbitYaw += 2.0 * dt;
+        arrowYaw = true;
+      }
+      if (vehicles.held('arrowright')) {
+        orbitYaw -= 2.0 * dt;
+        arrowYaw = true;
+      }
+      if (vehicles.held('arrowup')) orbitPitch = MathUtils.clamp(orbitPitch + 1.4 * dt, 0.08, 1.35);
       if (vehicles.held('arrowdown'))
         orbitPitch = MathUtils.clamp(orbitPitch - 1.4 * dt, 0.08, 1.35);
     }
@@ -499,11 +507,7 @@ export function createSandbox(
     labels.update(camera);
     renderer.render(scene, camera);
 
-    cb.onHud(
-      mode === 'player'
-        ? vehicles.hudText()
-        : `Features: ${strategist.featureCount}`
-    );
+    cb.onHud(mode === 'player' ? vehicles.hudText() : `Features: ${strategist.featureCount}`);
   });
 
   cb.onMode('player');
@@ -573,10 +577,7 @@ export function createSandbox(
 
     const castPixel = (u: number, v: number): Vector3 | null => {
       const ndc = new Vector2((u / image.width) * 2 - 1, 1 - (v / image.height) * 2);
-      raycaster.setFromCamera(ndc, shotCam);
-      raycaster.far = Infinity;
-      const hits = raycaster.intersectObject(tiles.group, true);
-      return hits.length > 0 ? hits[0].point.clone() : null;
+      return raycastBoundedHit(raycaster, ndc, shotCam, tiles.group);
     };
 
     const imageId = crypto.randomUUID();
@@ -604,10 +605,7 @@ export function createSandbox(
       }
 
       const geo = geoFrame.localToGeo(center);
-      const axisLen = Math.hypot(
-        ann.front[0] - ann.rear[0],
-        ann.front[1] - ann.rear[1]
-      );
+      const axisLen = Math.hypot(ann.front[0] - ann.rear[0], ann.front[1] - ann.rear[1]);
 
       detectionLayer.spawn(
         center,

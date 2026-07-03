@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CameraPose, DeployResult, ImageAnnotation } from './engine/createSandbox';
 import { DETECTION_CLASSES, type DetectionClass } from './engine/detections';
 import { detect, DetectClientError } from './intel/detectClient';
+import { drawOBB } from './intel/renderDetectionBox';
 
 import { CANVAS } from '@/constants';
 
@@ -48,6 +49,15 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
 
   const [result, setResult] = useState<DeployResult | null>(null);
   const [autoState, setAutoState] = useState<AutoDetectState>({ status: 'idle' });
+  // What the model actually returned for the last auto-detect run — kept separate from
+  // `result` (the deploy outcome) so the result view can show "what the model saw" even
+  // though the automated path deploys immediately (no human-in-the-loop gate, per F1).
+  const [lastDetected, setLastDetected] = useState<{
+    annotations: ImageAnnotation[];
+    model: string;
+    latencyMs: number;
+  } | null>(null);
+  const resultCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // ---------- image loading ----------
 
@@ -63,6 +73,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       setAnnotations([]);
       setPhase({ step: 'idle' });
       setResult(null);
+      setLastDetected(null);
     };
     img.src = url;
   };
@@ -78,58 +89,8 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     canvas.height = Math.round(imageSize.height * scale);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    const drawOBB = (
-      rear: [number, number],
-      front: [number, number],
-      halfW: number,
-      color: string,
-      label?: string
-    ): void => {
-      const r = [rear[0] * scale, rear[1] * scale];
-      const f = [front[0] * scale, front[1] * scale];
-      const hw = halfW * scale;
-      const len = Math.hypot(f[0] - r[0], f[1] - r[1]) || 1;
-      const ax = (f[0] - r[0]) / len;
-      const ay = (f[1] - r[1]) / len;
-      const px = -ay;
-      const py = ax;
-
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color.replace('1)', '0.15)');
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(r[0] + px * hw, r[1] + py * hw);
-      ctx.lineTo(f[0] + px * hw, f[1] + py * hw);
-      ctx.lineTo(f[0] - px * hw, f[1] - py * hw);
-      ctx.lineTo(r[0] - px * hw, r[1] - py * hw);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // facing arrow at the front
-      ctx.beginPath();
-      ctx.moveTo(f[0], f[1]);
-      ctx.lineTo(
-        f[0] - ax * CANVAS.AXIS_MULT + px * CANVAS.POS_MULT,
-        f[1] - ay * CANVAS.AXIS_MULT + py * CANVAS.POS_MULT
-      );
-      ctx.lineTo(
-        f[0] - ax * CANVAS.AXIS_MULT - px * CANVAS.POS_MULT,
-        f[1] - ay * CANVAS.AXIS_MULT - py * CANVAS.POS_MULT
-      );
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      if (label) {
-        ctx.font = 'bold 12px monospace';
-        ctx.fillStyle = color;
-        ctx.fillText(label, r[0] + CANVAS.X_OFFSET, r[1] - CANVAS.Y_OFFSET);
-      }
-    };
-
     annotations.forEach((a, i) => {
-      drawOBB(a.rear, a.front, a.halfWidthPx, 'rgba(239,68,68,1)', `#${i + 1}`);
+      drawOBB(ctx, a.rear, a.front, a.halfWidthPx, 'rgba(239,68,68,1)', scale, `#${i + 1}`);
     });
 
     if (phase.step === 'axis' && hover) {
@@ -144,13 +105,30 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     } else if (phase.step === 'width' && hover) {
       // Symmetric OBB: half-width = perpendicular distance from axis to cursor
       const hw = Math.max(distToAxis(phase.rear, phase.front, hover), 2);
-      drawOBB(phase.rear, phase.front, hw, 'rgba(99,102,241,1)');
+      drawOBB(ctx, phase.rear, phase.front, hw, 'rgba(99,102,241,1)', scale);
     }
   }, [annotations, phase, hover, imageSize, scale]);
 
   useEffect(() => {
     redraw();
   }, [redraw]);
+
+  // Draws the last auto-detect response on its own canvas in the result view — "what the
+  // model saw", independent of whether deployFromImage placed it correctly on the map.
+  useEffect(() => {
+    const canvas = resultCanvasRef.current;
+    const img = imageRef.current;
+    if (!canvas || !img || !imageSize || !lastDetected) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    canvas.width = Math.round(imageSize.width * scale);
+    canvas.height = Math.round(imageSize.height * scale);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    lastDetected.annotations.forEach((a, i) => {
+      const label = `#${i + 1} ${a.cls}${a.confidence !== undefined ? ` ${a.confidence.toFixed(2)}` : ''}`;
+      drawOBB(ctx, a.rear, a.front, a.halfWidthPx, 'rgba(16,185,129,1)', scale, label);
+    });
+  }, [lastDetected, imageSize, scale]);
 
   const toImagePx = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] => {
     // No real canvas to measure from — {0, 0} is the least-wrong fallback (the prior
@@ -271,7 +249,15 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     }
 
     try {
-      const detected = await detect(imageB64, pose, { ...imageSize, name: imageName });
+      const {
+        annotations: detected,
+        model,
+        latencyMs,
+      } = await detect(imageB64, pose, {
+        ...imageSize,
+        name: imageName,
+      });
+      setLastDetected({ annotations: detected, model, latencyMs });
       if (detected.length === 0) {
         setAutoState({ status: 'empty' });
         return;
@@ -316,6 +302,22 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
               Deployed {result.placed} detection{result.placed === 1 ? '' : 's'} to the world
               {result.failed > 0 ? ` — ${result.failed} failed (ray missed the mesh)` : ''}.
             </div>
+            {lastDetected && (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-widest text-base-content/40">
+                  <span>What the model saw</span>
+                  <span className="normal-case tracking-normal text-base-content/50">
+                    model={lastDetected.model} · {lastDetected.latencyMs.toFixed(0)}ms ·{' '}
+                    {lastDetected.annotations.length} box
+                    {lastDetected.annotations.length === 1 ? '' : 'es'}
+                  </span>
+                </div>
+                <canvas
+                  ref={resultCanvasRef}
+                  className="max-h-[420px] w-full rounded-lg border border-base-300 object-contain"
+                />
+              </div>
+            )}
             <div className="text-xs font-semibold uppercase tracking-widest text-base-content/40">
               Sentinel detection schema (what YOLO must emit later)
             </div>

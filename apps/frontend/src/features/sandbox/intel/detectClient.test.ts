@@ -40,7 +40,7 @@ describe('detectClient.detect', () => {
     });
   });
 
-  it('maps a successful response into ImageAnnotation[]', async () => {
+  it('maps a successful response into { annotations, model, latencyMs }', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -62,9 +62,9 @@ describe('detectClient.detect', () => {
       )
     );
 
-    const annotations = await detect('img-b64', POSE, IMAGE);
+    const result = await detect('img-b64', POSE, IMAGE);
 
-    expect(annotations).toEqual([
+    expect(result.annotations).toEqual([
       {
         id: 'vlm-0',
         cls: 'armored_fighting_vehicle',
@@ -74,6 +74,8 @@ describe('detectClient.detect', () => {
         confidence: 0.87,
       },
     ]);
+    expect(result.model).toBe('qwen2.5vl:3b');
+    expect(result.latencyMs).toBe(42.5);
   });
 
   it('sends pose mapped to the backend snake_case contract', async () => {
@@ -153,13 +155,13 @@ describe('detectClient.detect', () => {
     await expect(detect('img', POSE, IMAGE)).rejects.toMatchObject({ kind: 'invalid_response' });
   });
 
-  it('resolves to an empty array (not an error) when the detector finds nothing', async () => {
+  it('resolves to an empty annotations array (not an error) when the detector finds nothing', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(jsonResponse(200, { annotations: [], model: 'x', latency_ms: 1 }))
     );
 
-    await expect(detect('img', POSE, IMAGE)).resolves.toEqual([]);
+    await expect(detect('img', POSE, IMAGE)).resolves.toMatchObject({ annotations: [] });
   });
 
   it('preserves a real confidence of 0 — regression guard for the "no client-side 1.0" invariant', async () => {
@@ -184,8 +186,8 @@ describe('detectClient.detect', () => {
       )
     );
 
-    const annotations = await detect('img', POSE, IMAGE);
-    expect(annotations[0].confidence).toBe(0);
+    const result = await detect('img', POSE, IMAGE);
+    expect(result.annotations[0].confidence).toBe(0);
   });
 
   it('throws invalid_response for a malformed annotation (missing rear point)', async () => {
@@ -227,7 +229,8 @@ describe('detectClient.detect', () => {
       )
     );
 
-    await expect(detect('img', POSE, IMAGE)).resolves.toHaveLength(1);
+    const result = await detect('img', POSE, IMAGE);
+    expect(result.annotations).toHaveLength(1);
   });
 
   it('DetectClientError is a real Error subclass with a name', () => {

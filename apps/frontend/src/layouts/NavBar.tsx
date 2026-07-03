@@ -1,5 +1,10 @@
-import { SPAWN_LOCATIONS, getStoredSpawnKey, setStoredSpawnKey } from '../features/sandbox/spawnLocations';
+import {
+  SPAWN_LOCATIONS,
+  getStoredSpawnKey,
+  setStoredSpawnKey,
+} from '../features/sandbox/spawnLocations';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 export function NavBar() {
   const [spawn, setSpawn] = useState(getStoredSpawnKey());
@@ -60,6 +65,12 @@ export function NavBar() {
               ))}
             </select>
           </div>
+
+          <div className="divider divider-horizontal mx-0" />
+
+          <Link to="/detect-debug" className="btn btn-sm btn-ghost font-normal">
+            🔬 Detect Debug
+          </Link>
 
           <div className="divider divider-horizontal mx-0" />
 

@@ -91,16 +91,20 @@ describe('IntelImport — auto-detect wiring', () => {
   });
 
   it('runs detect() then feeds annotations straight into onDeploy — no manual boxes', async () => {
-    vi.mocked(detect).mockResolvedValue([
-      {
-        id: 'vlm-0',
-        cls: 'armored_fighting_vehicle',
-        rear: [10, 20],
-        front: [10, 40],
-        halfWidthPx: 15,
-        confidence: 0.9,
-      },
-    ]);
+    vi.mocked(detect).mockResolvedValue({
+      annotations: [
+        {
+          id: 'vlm-0',
+          cls: 'armored_fighting_vehicle',
+          rear: [10, 20],
+          front: [10, 40],
+          halfWidthPx: 15,
+          confidence: 0.9,
+        },
+      ],
+      model: 'fixture-model',
+      latencyMs: 120,
+    });
     onDeploy.mockReturnValue({ detections: [], placed: 1, failed: 0 });
 
     render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
@@ -141,7 +145,7 @@ describe('IntelImport — auto-detect wiring', () => {
   });
 
   it('shows an empty-result message when the detector finds nothing', async () => {
-    vi.mocked(detect).mockResolvedValue([]);
+    vi.mocked(detect).mockResolvedValue({ annotations: [], model: 'fixture-model', latencyMs: 50 });
 
     render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
     await loadImage();
@@ -153,7 +157,7 @@ describe('IntelImport — auto-detect wiring', () => {
   });
 
   it('shows a loading state and disables the button while detect() is pending', async () => {
-    let resolveDetect: (value: import('./engine/createSandbox').ImageAnnotation[]) => void;
+    let resolveDetect: (value: import('./intel/detectClient').DetectResult) => void;
     vi.mocked(detect).mockReturnValue(
       new Promise((resolve) => {
         resolveDetect = resolve;
@@ -169,7 +173,7 @@ describe('IntelImport — auto-detect wiring', () => {
     await waitFor(() => expect(screen.getByText(/detecting/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /detecting/i })).toBeDisabled();
 
-    resolveDetect!([]);
+    resolveDetect!({ annotations: [], model: 'fixture-model', latencyMs: 50 });
     await waitFor(() => expect(screen.getByText(/no detections found/i)).toBeInTheDocument());
   });
 
