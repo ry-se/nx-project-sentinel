@@ -32,6 +32,9 @@ packages = ["app"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "regression: end-to-end regression guard (never deleted; .claude/rules/testing.md)",
+]
 
 [tool.ruff]
 line-length = 100

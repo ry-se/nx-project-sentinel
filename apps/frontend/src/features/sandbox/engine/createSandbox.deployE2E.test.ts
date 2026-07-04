@@ -1,6 +1,6 @@
 import { TilesRenderer } from '3d-tiles-renderer';
 import { OBJECT_FRAME } from '3d-tiles-renderer/three';
-import { MathUtils, Mesh, MeshBasicMaterial, PlaneGeometry, Scene } from 'three';
+import { Group, MathUtils, Mesh, MeshBasicMaterial, PlaneGeometry, Scene } from 'three';
 
 import { type CameraPose, deployAnnotations, type ImageAnnotation } from './createSandbox';
 import { DetectionLayer } from './detections';
@@ -36,12 +36,13 @@ function fakeCanvasContext() {
  * equator" and "at the south pole" for the same lat/lon input. */
 function setupTilesAtAnchor(anchor: { lat: number; lon: number }): TilesRenderer {
   const tiles = new TilesRenderer();
-  // TilesRenderer's group delegates raycasting to its own tile-loading path by default
-  // (TilesGroup.raycast -> tilesRenderer.raycast when optimizeRaycast is on), which
-  // finds nothing against a mesh added directly rather than loaded as real tile content.
-  // Disabling it restores standard Object3D child-traversal raycasting — this test cares
-  // about deployAnnotations' own geometry math, not tile-loading internals.
-  tiles.optimizeRaycast = false;
+  // TilesRenderer's group (a TilesGroup) delegates raycasting to the renderer's own
+  // tile-loading path, which finds nothing against a mesh added directly rather than
+  // loaded as real tile content. Restore standard Object3D child-traversal raycasting on
+  // this instance so the test exercises deployAnnotations' own geometry math, not
+  // tile-loading internals. (Assigning the base Group.raycast directly, rather than the
+  // deprecated `tiles.optimizeRaycast = false` setter, which emits a deprecation warning.)
+  tiles.group.raycast = Group.prototype.raycast;
   tiles.ellipsoid.getObjectFrame(
     MathUtils.DEG2RAD * anchor.lat,
     MathUtils.DEG2RAD * anchor.lon,

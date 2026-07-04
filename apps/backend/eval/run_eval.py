@@ -21,6 +21,7 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import get_args
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # apps/backend/ -> import app.*
 
@@ -83,10 +84,17 @@ def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def load_fixtures(fixtures_dir: Path) -> list[Fixture]:
+    valid_classes = set(get_args(DetectionClass))
+    fixtures_root = fixtures_dir.resolve()
     fixtures: list[Fixture] = []
     for json_path in sorted(fixtures_dir.rglob("*.json")):
         data = json.loads(json_path.read_text())
-        image_path = json_path.parent / data["image"]
+        image_path = (json_path.parent / data["image"]).resolve()
+        # Keep fixture images inside the fixtures tree. Fixtures are operator-authored and
+        # local (no untrusted-input threat today), but this future-proofs against a shared
+        # fixture pack / CI-fetched fixtures turning `image` into an arbitrary-read.
+        if not image_path.is_relative_to(fixtures_root):
+            raise ValueError(f"{json_path}: image {data['image']!r} escapes the fixtures dir")
         if not image_path.is_file():
             raise FileNotFoundError(f"{json_path}: image {image_path} does not exist")
 
@@ -104,10 +112,19 @@ def load_fixtures(fixtures_dir: Path) -> list[Fixture]:
                 lat=0.0, lon=0.0, alt_m=alt_m or 0.0, heading_deg=0.0, pitch_deg=-90.0
             )
 
-        ground_truth = [
-            GroundTruthBox(cls=gt["cls"], rear=tuple(gt["rear"]), front=tuple(gt["front"]))
-            for gt in data["ground_truth"]
-        ]
+        ground_truth = []
+        for gt in data["ground_truth"]:
+            # Validate against the SAME enum the schema-parity test guards — a typo'd class
+            # ('aircrat') would otherwise be silently counted as a false-negative for a
+            # bogus class, skewing the very recall number this harness exists to report.
+            if gt["cls"] not in valid_classes:
+                raise ValueError(
+                    f"{json_path}: ground-truth cls {gt['cls']!r} is not a DetectionClass "
+                    f"(one of {sorted(valid_classes)})"
+                )
+            ground_truth.append(
+                GroundTruthBox(cls=gt["cls"], rear=tuple(gt["rear"]), front=tuple(gt["front"]))
+            )
         fixtures.append(
             Fixture(
                 name=json_path.stem,
@@ -189,7 +206,10 @@ async def run(fixtures_dir: Path, match_threshold_px: float) -> int:
             errored += 1
             continue
 
-        before = {cls: (s.true_positives, len(s.pixel_errors)) for cls, s in stats_by_class.items()}
+        # Per-class pixel-error count BEFORE this fixture's matching, so the geo-error loop
+        # below can attribute only this fixture's new errors (match_predictions appends
+        # cumulatively across fixtures).
+        errs_before = {cls: len(s.pixel_errors) for cls, s in stats_by_class.items()}
         match_predictions(fixture.ground_truth, predictions, match_threshold_px, stats_by_class)
 
         if fixture.fov_deg and fixture.alt_m:
@@ -198,7 +218,7 @@ async def run(fixtures_dir: Path, match_threshold_px: float) -> int:
             with Image.open(fixture.image_path) as img:
                 image_height_px = img.height
             for cls, stats in stats_by_class.items():
-                prev_tp, prev_errs = before.get(cls, (0, 0))
+                prev_errs = errs_before.get(cls, 0)
                 new_errors = stats.pixel_errors[prev_errs:]
                 for px_err in new_errors:
                     geo_errors_m.append(
@@ -231,7 +251,9 @@ async def run(fixtures_dir: Path, match_threshold_px: float) -> int:
     else:
         print("\nMean geolocation error: n/a (no fixture provided pose.alt_m + pose.fov_deg)")
 
-    return 1 if errored == len(fixtures) and fixtures else 0
+    # Any fixture erroring is a non-zero exit — a CI gate must see partial failure, not
+    # only total failure.
+    return 1 if errored else 0
 
 
 def main() -> None:

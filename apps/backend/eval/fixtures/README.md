@@ -21,9 +21,10 @@ subdirectory — `run_eval.py` walks recursively). Schema:
   harness doesn't have). Omit `pose` and the report skips the geo-error column for that
   image, reporting pixel error only.
 - `ground_truth` — one entry per real target in the image. `cls` MUST be one of the
-  three `DetectionClass` values (checked against the same enum the schema-parity test
-  guards). `rear`/`front` are pixel keypoints, same convention as `ImageAnnotation` in the
-  frontend (rear→front sets facing).
+  three `DetectionClass` values — `run_eval.py::load_fixtures` rejects any other value at
+  load time (a typo'd class would otherwise silently skew the recall number the harness
+  exists to report). `rear`/`front` are pixel keypoints, same convention as
+  `ImageAnnotation` in the frontend (rear→front sets facing).
 
 ## `smoke_test/`
 
