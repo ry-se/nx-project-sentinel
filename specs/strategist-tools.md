@@ -1,12 +1,13 @@
 # Spec — Strategist Tools
 
 Authority on strategist-mode reconnaissance/analysis tools and the orbit/pan camera.
-Sources: `engine/strategist.ts`, `engine/viewshed.ts`, `constants/engine.ts` (`VIEWSHED`).
+Sources: `engine/strategist.ts`, `engine/planFeature.ts`, `engine/viewshed.ts`,
+`constants/engine.ts` (`VIEWSHED`).
 
 ## Controller & camera
 
-`StrategistController(camera, canvas, tiles.group, scene, viewshed)`
-(`strategist.ts:33`). On `enable(center)` it positions an orbit camera above the
+`StrategistController(camera, canvas, tiles.group, scene, viewshed, geoFrame)`
+(`strategist.ts:89`). On `enable(center)` it positions an orbit camera above the
 player's last position. Camera controls (`strategist.ts:185-230`):
 
 - **left-drag** pan on a horizontal plane at the picked surface height,
@@ -23,23 +24,72 @@ draft.
 is left-click to place points, right-click to finish; a throttled hover preview raycasts
 the tileset.
 
-| Tool         | Interaction                                         | Output                                                              | Source     |
-| ------------ | --------------------------------------------------- | ------------------------------------------------------------------- | ---------- |
-| **select**   | drag/orbit/zoom only                                | (camera nav)                                                        | —          |
-| **distance** | click waypoints, right-click finish                 | cyan polyline + length label (m/km)                                 | `:327-338` |
-| **focus**    | click 3+ corners, right-click close → `prompt` name | extruded translucent AO volume + edges + area label (m²/ha/km²)     | `:340-378` |
-| **arc**      | click ① weapon ② max-range ③ end bearing            | red sector (radius = ①→②, swept ①→③) + radius label                 | `:380-405` |
-| **los**      | click observer, click target                        | green/red split line at the blocking building + CLEAR/BLOCKED label | `:407-452` |
-| **viewshed** | click observer, sweep to aim, click to lock         | green/red shaded city (delegates to `ViewshedController`)           | `:252-261` |
+| Tool         | Interaction                                         | Output                                                              | Finalizer (strategist.ts) | Builder (planFeature.ts)    |
+| ------------ | --------------------------------------------------- | ------------------------------------------------------------------- | ------------------------- | --------------------------- |
+| **select**   | drag/orbit/zoom only                                | (camera nav)                                                        | —                         | —                           |
+| **distance** | click waypoints, right-click finish                 | cyan polyline + length label (m/km)                                 | `finalizeDistance` `:432` | `buildDistanceGroup` `:140` |
+| **focus**    | click 3+ corners, right-click close → `prompt` name | extruded translucent AO volume + edges + area label (m²/ha/km²)     | `finalizeFocus` `:442`    | `buildFocusGroup` `:151`    |
+| **arc**      | click ① weapon ② max-range ③ end bearing            | red sector (radius = ①→②, swept ①→③) + radius label                 | `finalizeArc` `:453`      | `buildArcGroup` `:195`      |
+| **los**      | click observer, click target                        | green/red split line at the blocking building + CLEAR/BLOCKED label | `finalizeLos` `:464`      | `buildLosGroup` `:238`      |
+| **viewshed** | click observer, sweep to aim, click to lock         | green/red shaded city (delegates to `ViewshedController`)           | `:252-261`                | —                           |
 
-Measurement helpers: `pathLength`, `shoelaceXZ` (area), `fmtDist`, `fmtArea`
-(`strategist.ts:457-481`). LOS uses eye height 2 m and casts to `dist − 2 m` so the
-target marker itself isn't counted as a blocker.
+Each finalizer (distance/focus/arc/los) now does three things: build the visual `Group`
+via the matching pure builder in `planFeature.ts` (data-in, `Group`-out — no drafting
+state, so the same builder reconstructs an identical group from a saved `PlanFeature`);
+`serializeFeature(...)` the draft points + a name into a `PlanFeature`
+(`planFeature.ts:303`); and hand both to `addFeature` (`strategist.ts:417`), which stores
+them and fires `onFeaturesChanged`. Auto-generated names are `<Type> <n>` (e.g.
+`Distance 2`) counted per-type via `countOfType`; `focus` keeps its pre-existing
+`window.prompt` name entry.
 
-Features are stored in `features[]` and rendered under `featureRoot` on overlay
-**layer 1** (so they're excluded from the viewshed depth pass), `renderOrder` 999–1001.
-`featureCount` drives the strategist HUD. `clearAll()` removes all features + disables
-the viewshed.
+Measurement helpers: `pathLength`, `shoelaceXZ` (area), `fmtDist`, `fmtArea`, `marker`,
+`label` (`planFeature.ts:59-124`). LOS uses eye height 2 m and casts to `dist − 2 m` so
+the target marker itself isn't counted as a blocker; `buildLosGroup` returns
+`{ group, blocked, distanceM, blockedAtM? }` (`planFeature.ts:228`) so the finalizer can
+report the same "CLEAR"/"BLOCKED at Xm of Ym" status the raw group's own label shows.
+
+## Plan features (`planFeature.ts`) — the serializable model
+
+Every strategist feature (today: the 4 measurement tools above; later waves: control
+measures, unit symbols, viewpoints) is represented as a `PlanFeature`
+(`planFeature.ts:39`): `{ id, type, name, points: { local: LocalPoint[], geo:
+GeoPosition[] }, style?, metadata }`. `local` is a JSON-safe `{x,y,z}` stand-in for a
+`Vector3`; `geo` is captured via `geoFrame.localToGeo` **at draw time** (not
+recomputed on load, since the tiles frame may shift) — one lat/lon per local point, in
+the same order.
+
+- `serializeFeature(type, localPoints, name, geoFrame, metadata?, id?)` (`:303`) builds a
+  `PlanFeature` from a drafted point set.
+- `rebuildFeature(pf, { raycaster, tiles })` (`:334`) is the inverse: reconstructs the
+  `Group` a `PlanFeature` describes by dispatching to the matching pure builder above
+  (the `raycaster`/`tiles` context is needed only for `los`, which re-raycasts to
+  determine blocked/clear on rebuild). This is the seam persistence/export/phasing read
+  in later waves — nothing renders directly from anywhere else.
+
+Features are stored in `features: Feature[]` (`{ id, planFeature, group }`) and rendered
+under `featureRoot` on overlay **layer 1** (excluded from the viewshed depth pass),
+`renderOrder` 999–1001. `featureCount` drives the strategist HUD. `clearAll()` removes
+all features + clears the selection highlight + disables the viewshed.
+
+### Feature list API (`strategist.ts`)
+
+`listFeatures()` (`:155`) returns `{ id, name, type }` rows for a UI panel.
+`removeFeature(id)` (`:163`) and `undoLast()` (`:180`, LIFO — removes the most-recently
+added feature) both drop the in-scene group and clear the selection if the removed
+feature was selected. `renameFeature(id, name)` (`:172`) updates the stored
+`PlanFeature.name` (read by `listFeatures()`; does not regenerate the 3D label sprite —
+only `focus` currently renders its name in-scene). `selectFeature(id | null)` (`:193`)
+highlights a feature with a small marker at its first point on a dedicated
+`selectionRoot` layer; `selectedFeatureId` (`:188`) reads the current selection. Every
+mutating call (`addFeature`, `removeFeature`, `renameFeature`, `undoLast`, `clearAll`)
+fires the public `onFeaturesChanged` callback (`:62`) so a host UI can re-read
+`listFeatures()`.
+
+`WorldView.tsx`'s strategist toolbar renders a feature-list panel (next to the tools
+panel) wired to this API: click a row to select/highlight, an inline rename (✎), a
+delete button (🗑) per row, and an "Undo" button for the whole list. The panel refreshes
+on `onFeaturesChanged` AND on entering strategist mode (so a session that already has
+features when the panel first mounts isn't shown stale).
 
 ## Viewshed (`viewshed.ts`)
 
@@ -68,3 +118,10 @@ Tunables (`constants/engine.ts` `VIEWSHED`): `DEPTH_RES 2048`, `H_FOV_DEG 100`,
 - The viewshed depth map MUST be re-rendered per frame while active (correctness as
   tiles stream).
 - LOS far is `dist − 2 m` so the endpoint marker is never self-blocking.
+- Every feature MUST round-trip through `PlanFeature`: `rebuildFeature(serializeFeature(...))`
+  renders an equivalent group (same points, same label text) for all 4 current types.
+  Persistence (later wave), export (later wave), and phasing (later wave) all read this one
+  representation — a tool that renders directly without producing a `PlanFeature` is the
+  bug that breaks save/export/phase silently.
+- `PlanFeature.points.geo` is captured at draw time (`geoFrame.localToGeo`), never
+  recomputed on load.

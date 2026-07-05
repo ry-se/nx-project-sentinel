@@ -25,7 +25,7 @@ import {
   SphereRegion,
 } from '3d-tiles-renderer/plugins';
 
-import { StrategistController, type StratTool } from './strategist';
+import { type FeatureSummary, StrategistController, type StratTool } from './strategist';
 import { ViewshedController } from './viewshed';
 import { LabelManager } from './labels';
 import { ProjectileManager } from './projectiles';
@@ -94,6 +94,7 @@ export interface SandboxCallbacks {
   onStatus(text: string): void;
   onHud(text: string): void;
   onMode(mode: SandboxMode): void;
+  onFeaturesChanged?(): void;
   onVehicle?(type: VehicleType): void;
   onAttributions(text: string): void;
   onTilesLoaded(): void;
@@ -104,6 +105,11 @@ export interface Sandbox {
   setMode(mode: SandboxMode): void;
   setTool(tool: StratTool): void;
   clearAll(): void;
+  listFeatures(): FeatureSummary[];
+  removeFeature(id: string): void;
+  renameFeature(id: string, name: string): void;
+  undoLastFeature(): void;
+  selectFeature(id: string | null): void;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -423,10 +429,18 @@ export function createSandbox(
   // --- Modes + strategist tools ---
   let mode: SandboxMode = 'player';
   const viewshed = new ViewshedController(scene, tiles);
-  const strategist = new StrategistController(camera, canvas, tiles.group, scene, viewshed);
+  const strategist = new StrategistController(
+    camera,
+    canvas,
+    tiles.group,
+    scene,
+    viewshed,
+    geoFrame
+  );
   strategist.onStatus = (text) => {
     if (mode === 'strategist') cb.onStatus(text);
   };
+  strategist.onFeaturesChanged = () => cb.onFeaturesChanged?.();
 
   function setMode(next: SandboxMode): void {
     mode = next;
@@ -725,6 +739,11 @@ export function createSandbox(
     setMode,
     setTool: (tool) => strategist.setTool(tool),
     clearAll: () => strategist.clearAll(),
+    listFeatures: () => strategist.listFeatures(),
+    removeFeature: (id) => strategist.removeFeature(id),
+    renameFeature: (id, name) => strategist.renameFeature(id, name),
+    undoLastFeature: () => strategist.undoLast(),
+    selectFeature: (id) => strategist.selectFeature(id),
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;

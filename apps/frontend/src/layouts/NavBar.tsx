@@ -1,10 +1,11 @@
-import {
-  SPAWN_LOCATIONS,
-  getStoredSpawnKey,
-  setStoredSpawnKey,
-} from '../features/sandbox/spawnLocations';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+
+import {
+  getStoredSpawnKey,
+  setStoredSpawnKey,
+  SPAWN_LOCATIONS,
+} from '../features/sandbox/spawnLocations';
 
 export function NavBar() {
   const [spawn, setSpawn] = useState(getStoredSpawnKey());

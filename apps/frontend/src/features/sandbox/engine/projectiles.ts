@@ -1,7 +1,7 @@
 import {
   AdditiveBlending, CanvasTexture, CircleGeometry, Group, Mesh,
-  MeshBasicMaterial, Object3D, Raycaster, Scene, Sprite, SpriteMaterial,
-  SphereGeometry, Vector3,
+  MeshBasicMaterial, Object3D, Raycaster, Scene, SphereGeometry, Sprite,
+  SpriteMaterial, Vector3,
 } from 'three'
 
 const GRAVITY = -25

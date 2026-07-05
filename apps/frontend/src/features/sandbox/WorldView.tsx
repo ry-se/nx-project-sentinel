@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  type CameraPose,
   createSandbox,
   preflightGoogleKey,
-  type CameraPose,
   type Sandbox,
   type SandboxMode,
 } from './engine/createSandbox';
-import { SPAWN_LOCATIONS, getStoredSpawnKey } from './spawnLocations';
-import { TOOL_HINTS, type StratTool } from './engine/strategist';
+import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
+import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strategist';
 import type { VehicleType } from './engine/vehicles';
 import { IntelImport } from './IntelImport';
 
@@ -56,6 +56,16 @@ export function WorldView() {
   const [pose, setPose] = useState<CameraPose | null>(null);
   const [poseCopied, setPoseCopied] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [featureVersion, setFeatureVersion] = useState(0);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+
+  const features = useMemo<FeatureSummary[]>(
+    () => sandboxRef.current?.listFeatures() ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- featureVersion is the refresh signal; the list itself lives on sandboxRef, not React state
+    [featureVersion]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -82,7 +92,14 @@ export function WorldView() {
         {
           onStatus: setStatus,
           onHud: (text) => setHudLines(text.split('\n')),
-          onMode: setMode,
+          onMode: (next) => {
+            setMode(next);
+            // The feature list is only otherwise refreshed by onFeaturesChanged deltas —
+            // re-sync from the live sandbox on every mode entry so a strategist session that
+            // already has features (a future loaded plan) isn't shown stale/empty.
+            if (next === 'strategist') setFeatureVersion((v) => v + 1);
+          },
+          onFeaturesChanged: () => setFeatureVersion((v) => v + 1),
           onVehicle: setActiveVehicle,
           onAttributions: setAttributions,
           onTilesLoaded: () => setLoading(false),
@@ -115,6 +132,41 @@ export function WorldView() {
   const selectTool = useCallback((next: StratTool) => {
     setTool(next);
     sandboxRef.current?.setTool(next);
+  }, []);
+
+  const selectFeatureRow = useCallback((id: string) => {
+    setSelectedFeatureId((prev) => {
+      const next = prev === id ? null : id;
+      sandboxRef.current?.selectFeature(next);
+      return next;
+    });
+  }, []);
+
+  const startRename = useCallback((f: FeatureSummary) => {
+    setRenamingId(f.id);
+    setRenameDraft(f.name);
+  }, []);
+
+  const commitRename = useCallback(
+    (id: string) => {
+      const trimmed = renameDraft.trim();
+      if (trimmed) sandboxRef.current?.renameFeature(id, trimmed);
+      setRenamingId(null);
+    },
+    [renameDraft]
+  );
+
+  const deleteFeature = useCallback(
+    (id: string) => {
+      sandboxRef.current?.removeFeature(id);
+      if (selectedFeatureId === id) setSelectedFeatureId(null);
+    },
+    [selectedFeatureId]
+  );
+
+  const undoLastFeature = useCallback(() => {
+    sandboxRef.current?.undoLastFeature();
+    setSelectedFeatureId(null);
   }, []);
 
   // Live camera-pose readout (lon/lat/alt/heading) — this is the metadata a
@@ -203,6 +255,79 @@ export function WorldView() {
           >
             🗑 Clear All
           </button>
+        </div>
+      )}
+
+      {/* Strategist feature list (todo 12: list/select/rename/delete/undo) */}
+      {apiKey && !fatal && mode === 'strategist' && (
+        <div className="rounded-box fixed left-52 top-32 z-40 flex max-h-[60vh] w-56 flex-col gap-1 overflow-y-auto bg-base-100 p-2 shadow-md">
+          <div className="flex items-center justify-between px-2 pt-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
+              Features ({features.length})
+            </span>
+            <button
+              className="btn btn-ghost btn-xs font-normal disabled:opacity-30"
+              onClick={undoLastFeature}
+              disabled={features.length === 0}
+              aria-label="Undo last placed feature"
+            >
+              ↩ Undo
+            </button>
+          </div>
+          {features.length === 0 && (
+            <div className="px-2 py-1 text-xs text-base-content/40">No features placed yet</div>
+          )}
+          {features.map((f) => (
+            <div
+              key={f.id}
+              className={`flex items-center gap-1 rounded px-1 py-0.5 ${
+                selectedFeatureId === f.id ? 'bg-indigo-600/10' : ''
+              }`}
+            >
+              {renamingId === f.id ? (
+                <input
+                  autoFocus
+                  aria-label={`Rename ${f.name}`}
+                  className="input input-bordered input-xs flex-1"
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename(f.id);
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  onBlur={() => commitRename(f.id)}
+                />
+              ) : (
+                <button
+                  className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                  onClick={() => selectFeatureRow(f.id)}
+                  aria-pressed={selectedFeatureId === f.id}
+                  title={f.name}
+                >
+                  <span className="text-[10px] uppercase text-base-content/40">{f.type}</span>{' '}
+                  {f.name}
+                </button>
+              )}
+              {renamingId !== f.id && (
+                <>
+                  <button
+                    className="btn btn-ghost btn-xs px-1 font-normal"
+                    onClick={() => startRename(f)}
+                    aria-label={`Rename ${f.name}`}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
+                    onClick={() => deleteFeature(f.id)}
+                    aria-label={`Delete ${f.name}`}
+                  >
+                    🗑
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
