@@ -8,6 +8,7 @@ import {
   type SandboxMode,
 } from './engine/createSandbox';
 import type { Plan } from './engine/planStore';
+import type { Viewpoint } from './engine/viewpoint';
 import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
 import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strategist';
 import type { Affiliation, Echelon } from './engine/unitSymbol';
@@ -84,6 +85,8 @@ export function WorldView() {
   const [mgrsHudOn, setMgrsHudOn] = useState(true);
   const [planVersion, setPlanVersion] = useState(0);
   const [planNameDraft, setPlanNameDraft] = useState('');
+  const [viewpointVersion, setViewpointVersion] = useState(0);
+  const [viewpointNameDraft, setViewpointNameDraft] = useState('');
 
   const features = useMemo<FeatureSummary[]>(
     () => sandboxRef.current?.listFeatures() ?? [],
@@ -95,6 +98,12 @@ export function WorldView() {
     () => sandboxRef.current?.listPlans() ?? [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- planVersion is the refresh signal
     [planVersion]
+  );
+
+  const viewpoints = useMemo<Viewpoint[]>(
+    () => sandboxRef.current?.listViewpoints() ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- viewpointVersion is the refresh signal
+    [viewpointVersion]
   );
 
   useEffect(() => {
@@ -130,6 +139,7 @@ export function WorldView() {
             if (next === 'strategist') setFeatureVersion((v) => v + 1);
           },
           onFeaturesChanged: () => setFeatureVersion((v) => v + 1),
+          onViewpointsChanged: () => setViewpointVersion((v) => v + 1),
           onVehicle: setActiveVehicle,
           onAttributions: setAttributions,
           onTilesLoaded: () => setLoading(false),
@@ -226,6 +236,25 @@ export function WorldView() {
     sandboxRef.current?.deletePlan(id);
     setPlanVersion((v) => v + 1);
   }, []);
+
+  const saveViewpoint = useCallback(() => {
+    const trimmed = viewpointNameDraft.trim();
+    if (!trimmed || !sandboxRef.current) return;
+    sandboxRef.current.saveViewpoint(trimmed);
+    setViewpointNameDraft('');
+  }, [viewpointNameDraft]);
+
+  const moveViewpoint = useCallback(
+    (id: string, direction: -1 | 1) => {
+      const ids = viewpoints.map((v) => v.id);
+      const idx = ids.indexOf(id);
+      const swapWith = idx + direction;
+      if (idx === -1 || swapWith < 0 || swapWith >= ids.length) return;
+      [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+      sandboxRef.current?.reorderViewpoints(ids);
+    },
+    [viewpoints]
+  );
 
   // Live camera-pose readout (lon/lat/alt/heading) — this is the metadata a
   // real drone would embed; copy it whenever you take a screenshot.
@@ -397,6 +426,71 @@ export function WorldView() {
                 className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
                 onClick={() => deletePlan(p.id)}
                 aria-label={`Delete plan ${p.name}`}
+              >
+                🗑
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Strategist brief sequence (todo 19: viewpoint bookmarks, ordered) */}
+      {apiKey && !fatal && mode === 'strategist' && (
+        <div className="rounded-box fixed left-[34rem] top-32 z-40 flex max-h-[60vh] w-56 flex-col gap-1 overflow-y-auto bg-base-100 p-2 shadow-md">
+          <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
+            Brief sequence
+          </div>
+          <div className="flex gap-1 px-2">
+            <input
+              aria-label="Viewpoint name"
+              className="input input-bordered input-xs flex-1"
+              placeholder="Line of departure"
+              value={viewpointNameDraft}
+              onChange={(e) => setViewpointNameDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && saveViewpoint()}
+            />
+            <button
+              className="btn btn-xs border-none bg-indigo-600 text-white disabled:opacity-30"
+              onClick={saveViewpoint}
+              disabled={!viewpointNameDraft.trim()}
+              aria-label="Save current view as a viewpoint"
+            >
+              📍
+            </button>
+          </div>
+          {viewpoints.length === 0 && (
+            <div className="px-2 py-1 text-xs text-base-content/40">No viewpoints saved yet</div>
+          )}
+          {viewpoints.map((v, i) => (
+            <div key={v.id} className="flex items-center gap-1 rounded px-1 py-0.5">
+              <span className="text-[10px] text-base-content/40">{i + 1}</span>
+              <button
+                className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                onClick={() => sandboxRef.current?.restoreViewpoint(v.id)}
+                title={`Jump to "${v.name}"`}
+              >
+                {v.name}
+              </button>
+              <button
+                className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                onClick={() => moveViewpoint(v.id, -1)}
+                disabled={i === 0}
+                aria-label={`Move ${v.name} earlier`}
+              >
+                ↑
+              </button>
+              <button
+                className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                onClick={() => moveViewpoint(v.id, 1)}
+                disabled={i === viewpoints.length - 1}
+                aria-label={`Move ${v.name} later`}
+              >
+                ↓
+              </button>
+              <button
+                className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
+                onClick={() => sandboxRef.current?.deleteViewpoint(v.id)}
+                aria-label={`Delete viewpoint ${v.name}`}
               >
                 🗑
               </button>

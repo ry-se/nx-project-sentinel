@@ -235,6 +235,34 @@ real browser is deferred to the user** — this session used the Chrome DevTools
 for the Wave-0 walk, but the user asked not to continue doing so for token-cost reasons,
 so no walk receipt is recorded here for Wave 1; the user will exercise it themselves.
 
+## Viewpoint bookmarks + brief sequence (`viewpoint.ts`, `strategist.ts`)
+
+A **brief sequence** is an ordered list of `Viewpoint`s — `{ id, name, order, pose:
+CameraPose }` (`viewpoint.ts`) — reusing the EXISTING lossless intel-import `CameraPose`
+serialization (`createSandbox.ts::getCameraPose`, position+quaternion+geo) rather than a
+lossy lat/lon-only summary (invariant 1), so a bookmark restores the exact view.
+
+`StrategistController` owns the viewpoint list: `saveViewpoint(name, pose)` (appended
+last-in-sequence), `listViewpoints()` (sorted by `order`, NOT insertion order),
+`renameViewpoint`/`deleteViewpoint`, `reorderViewpoints(orderedIds)` (reassigns `order`
+0..n-1 to match — deterministic, stable across save/load, invariant 4),
+`restoreViewpoint(id)` (sets `camera.position` AND `camera.quaternion` via
+`restoreViewpointPose` — invariant 3, not just position), `exportViewpoints()`/
+`loadViewpoints()` (the persistence seam). Every mutating call fires the public
+`onViewpointsChanged` callback (same pattern as `onFeaturesChanged`).
+
+`Plan.viewpoints: Viewpoint[]` (`planStore.ts`) — persists/exports with the plan
+(invariant 2): `savePlan`'s 5th param, populated in `createSandbox.ts` from
+`strategist.exportViewpoints()`; `Sandbox.loadPlan(id)` calls BOTH
+`strategist.loadPlan(plan.features)` and `strategist.loadViewpoints(plan.viewpoints)`.
+
+`Sandbox.saveViewpoint(name)` captures the CURRENT view via the existing
+`getCameraPose()` (no new capture logic — the lossless serialization already exists) and
+hands it to `strategist.saveViewpoint`. `WorldView.tsx`'s "Brief sequence" panel: a name
+field + save button, an ordered list with jump-to-view (click), ↑/↓ reorder buttons, and
+delete — refreshing on `onViewpointsChanged` via a `viewpointVersion` counter (same
+pattern as the feature list's `featureVersion`).
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

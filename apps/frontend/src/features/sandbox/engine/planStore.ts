@@ -1,4 +1,5 @@
 import type { PlanFeature } from './planFeature';
+import type { Viewpoint } from './viewpoint';
 
 /** Bumped when the `Plan` shape changes incompatibly — `loadPlan` fails loud on a
  * mismatch (invariant 3) rather than silently misreading an older/newer format. */
@@ -12,6 +13,8 @@ export interface Plan {
   createdAt: string;
   updatedAt: string;
   features: PlanFeature[];
+  /** The brief sequence (todo 19) — persists/exports with the plan (invariant 2). */
+  viewpoints: Viewpoint[];
 }
 
 export class UnknownPlanSchemaVersionError extends Error {
@@ -52,7 +55,8 @@ export function savePlan(
   name: string,
   features: PlanFeature[],
   anchor: { lat: number; lon: number },
-  now: string
+  now: string,
+  viewpoints: Viewpoint[] = []
 ): Plan {
   const existing = readAllPlans().find((p) => p.name === name);
   const plan: Plan = {
@@ -63,6 +67,7 @@ export function savePlan(
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     features,
+    viewpoints,
   };
   localStorage.setItem(storageKey(plan.id), JSON.stringify(plan));
   return plan;

@@ -35,6 +35,7 @@ import {
   savePlan as savePlanToStore,
 } from './planStore';
 import { ViewshedController } from './viewshed';
+import type { Viewpoint } from './viewpoint';
 import { LabelManager } from './labels';
 import { ProjectileManager } from './projectiles';
 import { VehicleManager, type VehicleType } from './vehicles';
@@ -103,6 +104,7 @@ export interface SandboxCallbacks {
   onHud(text: string): void;
   onMode(mode: SandboxMode): void;
   onFeaturesChanged?(): void;
+  onViewpointsChanged?(): void;
   onVehicle?(type: VehicleType): void;
   onAttributions(text: string): void;
   onTilesLoaded(): void;
@@ -125,6 +127,12 @@ export interface Sandbox {
   loadPlan(id: string): void;
   listPlans(): Plan[];
   deletePlan(id: string): void;
+  saveViewpoint(name: string): Viewpoint;
+  listViewpoints(): Viewpoint[];
+  renameViewpoint(id: string, name: string): void;
+  deleteViewpoint(id: string): void;
+  reorderViewpoints(orderedIds: string[]): void;
+  restoreViewpoint(id: string): void;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -456,6 +464,7 @@ export function createSandbox(
     if (mode === 'strategist') cb.onStatus(text);
   };
   strategist.onFeaturesChanged = () => cb.onFeaturesChanged?.();
+  strategist.onViewpointsChanged = () => cb.onViewpointsChanged?.();
 
   function setMode(next: SandboxMode): void {
     mode = next;
@@ -774,10 +783,26 @@ export function createSandbox(
       strategist.mgrsHudEnabled = enabled;
     },
     savePlan: (name) =>
-      savePlanToStore(name, strategist.exportFeatures(), anchor, new Date().toISOString()),
-    loadPlan: (id) => strategist.loadPlan(loadPlanFromStore(id).features),
+      savePlanToStore(
+        name,
+        strategist.exportFeatures(),
+        anchor,
+        new Date().toISOString(),
+        strategist.exportViewpoints()
+      ),
+    loadPlan: (id) => {
+      const plan = loadPlanFromStore(id);
+      strategist.loadPlan(plan.features);
+      strategist.loadViewpoints(plan.viewpoints);
+    },
     listPlans: () => listPlansFromStore(),
     deletePlan: (id) => deletePlanFromStore(id),
+    saveViewpoint: (name) => strategist.saveViewpoint(name, getCameraPose()),
+    listViewpoints: () => strategist.listViewpoints(),
+    renameViewpoint: (id, name) => strategist.renameViewpoint(id, name),
+    deleteViewpoint: (id) => strategist.deleteViewpoint(id),
+    reorderViewpoints: (orderedIds) => strategist.reorderViewpoints(orderedIds),
+    restoreViewpoint: (id) => strategist.restoreViewpoint(id),
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;

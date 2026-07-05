@@ -11,6 +11,7 @@ import {
   Vector3,
 } from 'three';
 
+import type { CameraPose } from './createSandbox';
 import type { GeoFrame } from './geoFrame';
 import { toMgrs } from './mgrs';
 import {
@@ -35,6 +36,7 @@ import {
 } from './planFeature';
 import { type Affiliation, buildUnitSymbolGroup, type Echelon, ECHELON_ABBR } from './unitSymbol';
 import type { ViewshedController } from './viewshed';
+import { restoreViewpointPose, type Viewpoint } from './viewpoint';
 
 export type StratTool =
   | 'select'
@@ -109,6 +111,9 @@ export class StrategistController {
   public unitEchelon: Echelon = 'platoon';
   /** Toggles the MGRS cursor readout in the strategist HUD (todo 15). */
   public mgrsHudEnabled = true;
+  public onViewpointsChanged: () => void = () => {
+    /* Custom Hook */
+  };
 
   private camera: PerspectiveCamera;
   private canvas: HTMLCanvasElement;
@@ -119,6 +124,7 @@ export class StrategistController {
   private hover: Vector3 | null = null;
   private cursorGround: Vector3 | null = null;
   private features: Feature[] = [];
+  private viewpoints: Viewpoint[] = [];
   private featureRoot = new Group();
   private previewRoot = new Group();
   private selectionRoot = new Group();
@@ -233,6 +239,60 @@ export class StrategistController {
   public getCursorMgrs(): string | null {
     if (!this.mgrsHudEnabled || !this.cursorGround) return null;
     return toMgrs(this.geoFrame.localToGeo(this.cursorGround));
+  }
+
+  // ---------- viewpoint bookmarks + brief sequence (todo 19) ----------
+
+  /** Saves the given pose (captured by the caller — `createSandbox.ts`'s `getCameraPose()`,
+   * the existing lossless serialization, invariant 1) as a new, last-in-sequence viewpoint. */
+  public saveViewpoint(name: string, pose: CameraPose): Viewpoint {
+    const vp: Viewpoint = { id: crypto.randomUUID(), name, order: this.viewpoints.length, pose };
+    this.viewpoints.push(vp);
+    this.onViewpointsChanged();
+    return vp;
+  }
+
+  /** Ordered by `order`, not insertion order (composes with todo 20's playback stepping). */
+  public listViewpoints(): Viewpoint[] {
+    return [...this.viewpoints].sort((a, b) => a.order - b.order);
+  }
+
+  public renameViewpoint(id: string, name: string): void {
+    const vp = this.viewpoints.find((v) => v.id === id);
+    if (!vp) return;
+    vp.name = name;
+    this.onViewpointsChanged();
+  }
+
+  public deleteViewpoint(id: string): void {
+    this.viewpoints = this.viewpoints.filter((v) => v.id !== id);
+    this.onViewpointsChanged();
+  }
+
+  /** Reassigns `order` 0..n-1 to match `orderedIds` — deterministic, stable across
+   * save/load (invariant 4). */
+  public reorderViewpoints(orderedIds: string[]): void {
+    orderedIds.forEach((id, index) => {
+      const vp = this.viewpoints.find((v) => v.id === id);
+      if (vp) vp.order = index;
+    });
+    this.onViewpointsChanged();
+  }
+
+  /** Jumps the camera to a saved viewpoint — sets position AND orientation (invariant 3). */
+  public restoreViewpoint(id: string): void {
+    const vp = this.viewpoints.find((v) => v.id === id);
+    if (vp) restoreViewpointPose(this.camera, vp.pose);
+  }
+
+  /** The full viewpoint set (todo 17/18: persisted inside the `Plan`, invariant 2). */
+  public exportViewpoints(): Viewpoint[] {
+    return [...this.viewpoints];
+  }
+
+  public loadViewpoints(viewpoints: Viewpoint[]): void {
+    this.viewpoints = [...viewpoints];
+    this.onViewpointsChanged();
   }
 
   public removeFeature(id: string): void {
