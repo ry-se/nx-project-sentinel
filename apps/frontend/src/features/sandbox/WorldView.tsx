@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type CameraPose,
   createSandbox,
+  downloadBlob,
   preflightGoogleKey,
   type Sandbox,
   type SandboxMode,
@@ -253,6 +254,19 @@ export function WorldView() {
     sandboxRef.current?.deletePlan(id);
     setPlanVersion((v) => v + 1);
   }, []);
+
+  const exportPlanFile = useCallback(
+    (format: 'geojson' | 'kml') => {
+      const sb = sandboxRef.current;
+      if (!sb) return;
+      const name = planNameDraft.trim() || 'Untitled Plan';
+      const content = format === 'geojson' ? sb.exportPlanGeoJSON(name) : sb.exportPlanKML(name);
+      const mime =
+        format === 'geojson' ? 'application/geo+json' : 'application/vnd.google-earth.kml+xml';
+      downloadBlob(new Blob([content], { type: mime }), `${name}.${format}`);
+    },
+    [planNameDraft]
+  );
 
   const saveViewpoint = useCallback(() => {
     const trimmed = viewpointNameDraft.trim();
@@ -509,6 +523,26 @@ export function WorldView() {
               </button>
             </div>
           ))}
+          {/* Hand-off export (todo 23/24) — a subordinate opens the file elsewhere, no
+              live session needed. Reads the LIVE feature set, not a saved snapshot. */}
+          <div className="flex gap-1 px-2 pt-1">
+            <button
+              className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
+              onClick={() => exportPlanFile('geojson')}
+              disabled={features.length === 0}
+              aria-label="Export plan as GeoJSON"
+            >
+              Export GeoJSON
+            </button>
+            <button
+              className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
+              onClick={() => exportPlanFile('kml')}
+              disabled={features.length === 0}
+              aria-label="Export plan as KML"
+            >
+              Export KML
+            </button>
+          </div>
         </div>
       )}
 

@@ -1,8 +1,19 @@
 import type { ClassificationLevel, Provenance } from './classification';
 import type { GeoPosition } from './geoFrame';
 import type { PlanFeature, PlanFeatureType } from './planFeature';
-import type { Plan } from './planStore';
 import type { Affiliation, Echelon } from './unitSymbol';
+
+/** What export needs from a `Plan` (`planStore.ts`) — deliberately narrower than the full
+ * `Plan` interface. The LIVE, not-yet-saved session (a `Sandbox.exportPlanGeoJSON` call
+ * before any `savePlan`) has no real `id`/`anchor`/timestamps yet; requiring the full
+ * `Plan` shape here would force fabricating placeholder values just to satisfy the type.
+ * A saved `Plan` still satisfies this structurally, so both the live-session and the
+ * saved-plan callers pass through the same functions unchanged. */
+export interface ExportablePlan {
+  name: string;
+  features: PlanFeature[];
+  classification: ClassificationLevel;
+}
 
 type GeoJSONGeometryType = 'Point' | 'LineString' | 'Polygon';
 
@@ -70,7 +81,7 @@ function featureProperties(
 
 /** A `FeatureCollection` (RFC 7946 §3.3) — one Feature per `PlanFeature`, geometry per
  * `GEOMETRY_TYPE`, properties per `featureProperties`. */
-export function exportGeoJSON(plan: Plan): string {
+export function exportGeoJSON(plan: ExportablePlan): string {
   const featureCollection = {
     type: 'FeatureCollection',
     features: plan.features.map((pf) => {
@@ -131,7 +142,7 @@ function flattenProperties(props: Record<string, unknown>): Array<[string, strin
 
 /** Equivalent KML (invariant 2 — well-formed XML) — one `Placemark` per `PlanFeature`,
  * so a plan opens directly in Google Earth for a briefing hand-off (D-Army-4(a)). */
-export function exportKML(plan: Plan): string {
+export function exportKML(plan: ExportablePlan): string {
   const placemarks = plan.features
     .map((pf) => {
       const props = featureProperties(pf, plan.classification);

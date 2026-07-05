@@ -412,8 +412,44 @@ captured at draw time, `geoFrame.ts:4-8`) — no re-projection, no re-derivation
   (`name`, `Data` name/value) is XML-escaped (`xmlEscape`) — a feature named with `<`/`&`/`"`
   cannot inject markup into the exported document.
 
-**Out of this todo's scope** (the wire todo lands it): the UI download buttons and a live
-export→re-parse check in a real browser session — todo 24.
+The UI download buttons and the Wave-2 gate proof landed in todo 24 (below).
+
+## Sand-table wiring + Wave-2 gate (`WorldView.tsx`, `createSandbox.ts`)
+
+`Sandbox.exportPlanGeoJSON(name)`/`exportPlanKML(name)` (`createSandbox.ts`) build an
+`ExportablePlan` from the LIVE controller state — `strategist.exportFeatures()` +
+`strategist.currentClassification` — and call `exportGeoJSON`/`exportKML` directly; they do
+NOT require a prior `savePlan()` call (invariant: the export always reflects what's on
+screen, not a stale saved snapshot). `WorldView.tsx`'s Plans panel renders "Export GeoJSON"
+and "Export KML" buttons, disabled when there are zero features, that call these methods
+with the typed plan-name draft (falling back to `'Untitled Plan'` when blank) and hand the
+returned string to `downloadBlob` (`createSandbox.ts`, exported — previously
+`captureShot`-only) as a `.geojson`/`.kml` file.
+
+`ExportablePlan` (`exportPlan.ts`) is deliberately narrower than the full `Plan`
+(`planStore.ts`) — `{ name, features, classification }` only — precisely so the LIVE,
+not-yet-saved session can export without fabricating a placeholder `id`/`anchor`/timestamps
+just to satisfy a wider type; a saved `Plan` still satisfies it structurally.
+
+**Wave-2 gate (todo 24, `WorldView.sandtable.test.tsx`):** two describe blocks. (1) A
+real-engine, zero-mock end-to-end test — build a mixed feature set on a real
+`StrategistController` (a Wave-0/1 `distance` measurement + a Wave-1 `unit` symbol), save
+two viewpoints, `savePlan`/`loadPlan` through the real `planStore` into a GENUINELY SEPARATE
+controller, drive brief playback to completion at each viewpoint (asserting the camera's
+`position`/`quaternion` land exactly on the saved pose), enter and exit ground-walk on that
+same loaded controller, then export and re-parse — asserting every feature + classification
+
+- provenance survived intact, and that the Wave-0/1 `distance` type round-tripped unmodified
+  (no regression from the Wave-2 additions). (2) A lightweight React-level check (the same
+  `fakeSandbox` convention as `WorldView.featureList.test.tsx`) proving the export buttons are
+  disabled with no features, enabled once features exist, and call `exportPlanGeoJSON`/
+  `exportPlanKML` with the current plan-name draft.
+
+**Manual walk receipt:** per `rules/user-flow-validation.md`, the automated Wave-2 gate test
+above is necessary but not sufficient — the user exercises the real Flow-B chain (build →
+brief → ground-walk → classification banner → export → open in a real GeoJSON/KML viewer)
+themselves in a real browser session; per this session's standing instruction, browser
+automation was not used for this verification, so no walk receipt is recorded here.
 
 ## Viewshed (`viewshed.ts`)
 

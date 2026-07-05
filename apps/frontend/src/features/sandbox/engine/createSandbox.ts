@@ -37,6 +37,7 @@ import {
 import { ViewshedController } from './viewshed';
 import type { Viewpoint } from './viewpoint';
 import type { ClassificationLevel } from './classification';
+import { exportGeoJSON, exportKML } from './exportPlan';
 import { LabelManager } from './labels';
 import { ProjectileManager } from './projectiles';
 import { VehicleManager, type VehicleType } from './vehicles';
@@ -145,6 +146,12 @@ export interface Sandbox {
   setClassification(level: ClassificationLevel): void;
   getClassification(): ClassificationLevel;
   setOperatorName(name: string): void;
+  /** Serializes the LIVE feature set (not necessarily saved yet) to GeoJSON/KML — reads
+   * straight from `strategist.exportFeatures()`, same source `savePlan` reads (todo 23/24
+   * invariant 2: brief playback, ground-walk, classification, and export all operate on
+   * the one live controller, never a parallel copy). */
+  exportPlanGeoJSON(name: string): string;
+  exportPlanKML(name: string): string;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -160,7 +167,7 @@ export interface Sandbox {
   dispose(): void;
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -818,6 +825,18 @@ export function createSandbox(
     setOperatorName: (name) => {
       strategist.operatorName = name;
     },
+    exportPlanGeoJSON: (name) =>
+      exportGeoJSON({
+        name,
+        features: strategist.exportFeatures(),
+        classification: strategist.currentClassification,
+      }),
+    exportPlanKML: (name) =>
+      exportKML({
+        name,
+        features: strategist.exportFeatures(),
+        classification: strategist.currentClassification,
+      }),
     listPlans: () => listPlansFromStore(),
     deletePlan: (id) => deletePlanFromStore(id),
     saveViewpoint: (name) => strategist.saveViewpoint(name, getCameraPose()),
