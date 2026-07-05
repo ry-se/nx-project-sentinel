@@ -752,7 +752,7 @@ export function WorldView() {
 
       {/* Player vehicle switcher */}
       {apiKey && !fatal && mode === 'player' && (
-        <div className="rounded-box fixed left-4 top-32 z-40 flex flex-col gap-1 bg-base-100 p-2 shadow-md">
+        <PanelRail side="left">
           {VEHICLES.map((v) => (
             <button
               key={v.id}
@@ -771,7 +771,7 @@ export function WorldView() {
               ? 'Q/E roll · SHIFT boost · B bomb'
               : 'WASD drive · SPACE fire'}
           </div>
-        </div>
+        </PanelRail>
       )}
 
       {/* Status bar */}
@@ -802,7 +802,7 @@ export function WorldView() {
 
       {/* Camera pose readout + intel import (top-right) */}
       {apiKey && !fatal && !loading && pose && (
-        <div className="fixed right-4 top-20 z-40 flex flex-col items-end gap-2">
+        <PanelRail side="right">
           <div className="rounded-box bg-base-100 px-3 py-2 font-mono text-xs shadow-md">
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
               Camera pose
@@ -848,7 +848,7 @@ export function WorldView() {
               <Trash2 className="h-4 w-4" />
             </button>
           </div>
-        </div>
+        </PanelRail>
       )}
 
       {/* Intel import modal */}
