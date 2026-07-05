@@ -367,13 +367,14 @@ accreditation/handling-caveat enforcement is an environment gate, not code).
   directly — no separate copy of the level exists between the controller and the
   Sandbox facade. `savePlan`/`loadPlan` (`createSandbox.ts:806,812`) thread the level
   through the same save/load round-trip as features and viewpoints.
-- `WorldView.tsx` renders a persistent classification banner (`WorldView.tsx:327-343`) —
+- `WorldView.tsx` renders a persistent classification banner (`WorldView.tsx:381-397`) —
   fixed top AND bottom bars, always visible in strategist mode, colored via
-  `CLASSIFICATION_COLOR` — plus a `<select>` picker (`WorldView.tsx:460-466`, bound to
-  `CLASSIFICATION_LEVELS`) inside the Plans panel. Selecting a level calls
-  `selectClassification` (`WorldView.tsx:247-249`), which updates local state AND calls
+  `CLASSIFICATION_COLOR` — plus a `<select>` picker (`WorldView.tsx:592-602`, bound to
+  `CLASSIFICATION_LEVELS`) inside the Plans section of the strategist left rail (see
+  "Sand-table wiring + Wave-2 gate" below for the rail layout). Selecting a level calls
+  `selectClassification` (`WorldView.tsx:288-291`), which updates local state AND calls
   `sandbox.setClassification` so the two stay in sync; `loadPlan` similarly re-syncs
-  local state from `sandbox.getClassification()` (`WorldView.tsx:244`) after a load.
+  local state from `sandbox.getClassification()` (`WorldView.tsx:285`) after a load.
 
 ## Export to GeoJSON / KML (`exportPlan.ts`)
 
@@ -437,19 +438,45 @@ real-engine, zero-mock end-to-end test — build a mixed feature set on a real
 two viewpoints, `savePlan`/`loadPlan` through the real `planStore` into a GENUINELY SEPARATE
 controller, drive brief playback to completion at each viewpoint (asserting the camera's
 `position`/`quaternion` land exactly on the saved pose), enter and exit ground-walk on that
-same loaded controller, then export and re-parse — asserting every feature + classification
-
-- provenance survived intact, and that the Wave-0/1 `distance` type round-tripped unmodified
-  (no regression from the Wave-2 additions). (2) A lightweight React-level check (the same
-  `fakeSandbox` convention as `WorldView.featureList.test.tsx`) proving the export buttons are
-  disabled with no features, enabled once features exist, and call `exportPlanGeoJSON`/
-  `exportPlanKML` with the current plan-name draft.
+same loaded controller, then export and re-parse — asserting every feature + classification +
+provenance survived intact, and that the Wave-0/1 `distance` type round-tripped unmodified
+(no regression from the Wave-2 additions). (2) A lightweight React-level check (the same
+`fakeSandbox` convention as `WorldView.featureList.test.tsx`) proving the export buttons are
+disabled with no features, enabled once features exist, and call `exportPlanGeoJSON`/
+`exportPlanKML` with the current plan-name draft.
 
 **Manual walk receipt:** per `rules/user-flow-validation.md`, the automated Wave-2 gate test
 above is necessary but not sufficient — the user exercises the real Flow-B chain (build →
 brief → ground-walk → classification banner → export → open in a real GeoJSON/KML viewer)
 themselves in a real browser session; per this session's standing instruction, browser
 automation was not used for this verification, so no walk receipt is recorded here.
+
+## Strategist UI design system (`styles.css`, `ui/PanelRail.tsx`, `ui/PanelSection.tsx`)
+
+A dark "sentinel" daisyUI theme (`styles.css`) — one reserved cyan accent
+(`--color-primary`/`secondary`/`accent`, mapped identically so no daisyUI component
+defaults to a different brand color) drives every interactive/selected state; dark
+blue-grey surfaces; sharper corners than daisyUI's stock defaults. Classification colors
+(`classification.ts`'s `CLASSIFICATION_COLOR`) are NEVER drawn from these theme tokens —
+they stay inline `style={{backgroundColor}}`, reserved for classification alone, so the
+banner's meaning can never silently drift with a future theme change. `lucide-react` icons
+replace every button emoji except the Tank vehicle icon (no clear lucide equivalent) and
+unrelated Spider-Man-mode status text (out of this workstream's scope).
+
+Every strategist/player-mode side panel is a child of ONE `PanelRail` per side
+(`ui/PanelRail.tsx`) — a docked, scrollable glass surface whose real CSS flow resolves
+position/height, replacing what used to be N independently `fixed`-positioned panels each
+guessing a hardcoded left offset (the concrete bug this fixed: the Plans panel at
+`left-[28rem]` and the Brief-sequence panel at `left-[34rem]` genuinely overlapped for
+6rem, because neither offset accounted for the other's rendered width). Inside the
+strategist-mode left rail, `PanelSection` (`ui/PanelSection.tsx`) wraps each of Tools,
+Features, Plans, and Brief sequence as a collapsible section (defaults expanded — every
+panel's prior always-visible behavior is unchanged), ordered top-to-bottom as one workflow:
+draw/measure → see what you drew → persist it as a named plan → sequence a briefing
+walkthrough — rather than the arbitrary prior source order. The player-mode vehicle
+switcher and the right-side camera-pose/capture/import-intel block each get their own
+single-section `PanelRail` (no `PanelSection` needed — each was already one self-contained
+block with nothing to merge).
 
 ## Viewshed (`viewshed.ts`)
 
