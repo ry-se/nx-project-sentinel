@@ -83,7 +83,7 @@ vi.mock('./engine/createSandbox', async () => {
 async function mountInStrategistMode(): Promise<void> {
   localStorage.setItem('google_tiles_key', 'test-key');
   render(<WorldView />);
-  await waitFor(() => expect(screen.getByText(/🛰 STRATEGIST/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/STRATEGIST/)).toBeInTheDocument());
 }
 
 describe('WorldView — feature list panel (todo 12)', () => {

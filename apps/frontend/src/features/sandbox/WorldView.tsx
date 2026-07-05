@@ -1,3 +1,38 @@
+import {
+  ArrowRight,
+  Ban,
+  Camera,
+  Car,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Clipboard,
+  Compass,
+  Eye,
+  Flag,
+  Footprints,
+  Gamepad2,
+  Import,
+  type LucideIcon,
+  Map,
+  MapPin,
+  MousePointer2,
+  Pencil,
+  Plane,
+  Radar,
+  Ruler,
+  Satellite,
+  Save,
+  SkipBack,
+  SkipForward,
+  Square,
+  SquareDashed,
+  Tag,
+  Target,
+  Trash2,
+  Undo2,
+  Waves,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -26,20 +61,20 @@ const KEY_STORAGE = 'google_tiles_key';
 
 // SPAWN_LOCATIONS imported from shared module
 
-const TOOLS: Array<{ id: StratTool; label: string }> = [
-  { id: 'select', label: '☰ Select' },
-  { id: 'distance', label: '📏 Distance' },
-  { id: 'focus', label: '🎯 Focus Area' },
-  { id: 'arc', label: '🧭 Fire Arc' },
-  { id: 'los', label: '👁 Line of Sight' },
-  { id: 'viewshed', label: '🟢 Viewshed' },
-  { id: 'boundary', label: '🚧 Boundary' },
-  { id: 'phaseline', label: '〰️ Phase Line' },
-  { id: 'loa', label: '⛔ Limit of Adv.' },
-  { id: 'axis', label: '➡️ Axis of Adv.' },
-  { id: 'objective', label: '🚩 Objective' },
-  { id: 'symbol', label: '⬛ Unit Symbol' },
-  { id: 'groundWalk', label: '🚶 Ground Walk' },
+const TOOLS: Array<{ id: StratTool; label: string; Icon: LucideIcon }> = [
+  { id: 'select', label: 'Select', Icon: MousePointer2 },
+  { id: 'distance', label: 'Distance', Icon: Ruler },
+  { id: 'focus', label: 'Focus Area', Icon: Target },
+  { id: 'arc', label: 'Fire Arc', Icon: Compass },
+  { id: 'los', label: 'Line of Sight', Icon: Eye },
+  { id: 'viewshed', label: 'Viewshed', Icon: Radar },
+  { id: 'boundary', label: 'Boundary', Icon: SquareDashed },
+  { id: 'phaseline', label: 'Phase Line', Icon: Waves },
+  { id: 'loa', label: 'Limit of Adv.', Icon: Ban },
+  { id: 'axis', label: 'Axis of Adv.', Icon: ArrowRight },
+  { id: 'objective', label: 'Objective', Icon: Flag },
+  { id: 'symbol', label: 'Unit Symbol', Icon: Square },
+  { id: 'groundWalk', label: 'Ground Walk', Icon: Footprints },
 ];
 
 const AFFILIATIONS: Affiliation[] = ['friendly', 'enemy', 'neutral'];
@@ -53,10 +88,13 @@ const ECHELONS: Echelon[] = [
   'brigade',
 ];
 
-const VEHICLES: Array<{ id: VehicleType; label: string; key: string }> = [
+/** Tank keeps its emoji — lucide has no literal-tank equivalent, and the nearest
+ * stand-in (Shield) is less clear than the current helmet glyph; not worth a semantic
+ * downgrade for one low-priority Player-mode icon. */
+const VEHICLES: Array<{ id: VehicleType; label: string; key: string; Icon?: LucideIcon }> = [
   { id: 'tank', label: '🪖 Tank', key: '1' },
-  { id: 'car', label: '🏎 GT Car', key: '2' },
-  { id: 'jet', label: '✈️ Jet', key: '3' },
+  { id: 'car', label: 'GT Car', key: '2', Icon: Car },
+  { id: 'jet', label: 'Jet', key: '3', Icon: Plane },
 ];
 
 function getStoredKey(): string | null {
@@ -361,13 +399,14 @@ export function WorldView() {
       {/* Mode badge */}
       {apiKey && !fatal && (
         <div className="fixed left-4 top-20 z-40">
-          <div
-            className={`rounded-box bg-base-100 px-3 py-2 text-sm font-semibold shadow-md ${
-              mode === 'strategist' ? 'text-indigo-600' : 'text-green-600'
-            }`}
-          >
-            {mode === 'strategist' ? '🛰 STRATEGIST' : '🎮 PLAYER'}
-            <span className="ml-2 font-normal text-base-content/40">TAB to switch</span>
+          <div className="rounded-box flex items-center gap-2 bg-base-100 px-3 py-2 text-sm font-semibold text-primary shadow-md">
+            {mode === 'strategist' ? (
+              <Satellite className="h-4 w-4" />
+            ) : (
+              <Gamepad2 className="h-4 w-4" />
+            )}
+            {mode === 'strategist' ? 'STRATEGIST' : 'PLAYER'}
+            <span className="font-normal text-base-content/40">TAB to switch</span>
           </div>
         </div>
       )}
@@ -376,10 +415,10 @@ export function WorldView() {
       {apiKey && !fatal && mode === 'strategist' && tool === 'groundWalk' && (
         <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
           <button
-            className="btn btn-sm border-none bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
+            className="btn btn-primary btn-sm shadow-md"
             onClick={() => sandboxRef.current?.exitGroundWalk()}
           >
-            🚶 Exit Ground Walk (Esc)
+            <Footprints className="h-4 w-4" /> Exit Ground Walk (Esc)
           </button>
         </div>
       )}
@@ -394,13 +433,11 @@ export function WorldView() {
             <button
               key={t.id}
               className={`btn btn-sm justify-start font-normal ${
-                tool === t.id
-                  ? 'border-none bg-indigo-600 text-white hover:bg-indigo-700'
-                  : 'btn-ghost'
+                tool === t.id ? 'btn-primary' : 'btn-ghost'
               }`}
               onClick={() => selectTool(t.id)}
             >
-              {t.label}
+              <t.Icon className="h-4 w-4" /> {t.label}
             </button>
           ))}
           <div className="divider my-0" />
@@ -443,7 +480,7 @@ export function WorldView() {
               sandboxRef.current?.setLabelsVisible(next);
             }}
           >
-            🏷 Labels {labelsOn ? '✓' : ''}
+            <Tag className="h-4 w-4" /> Labels {labelsOn && <Check className="h-3 w-3" />}
           </button>
           <button
             className="btn btn-ghost btn-sm justify-start font-normal"
@@ -453,13 +490,13 @@ export function WorldView() {
               sandboxRef.current?.setMgrsHudEnabled(next);
             }}
           >
-            🗺 MGRS HUD {mgrsHudOn ? '✓' : ''}
+            <Map className="h-4 w-4" /> MGRS HUD {mgrsHudOn && <Check className="h-3 w-3" />}
           </button>
           <button
-            className="btn btn-ghost btn-sm justify-start font-normal text-red-500 hover:bg-red-50"
+            className="btn btn-ghost btn-sm justify-start font-normal text-error hover:bg-error/10"
             onClick={() => sandboxRef.current?.clearAll()}
           >
-            🗑 Clear All
+            <Trash2 className="h-4 w-4" /> Clear All
           </button>
         </div>
       )}
@@ -494,12 +531,12 @@ export function WorldView() {
               onKeyDown={(e) => e.key === 'Enter' && savePlan()}
             />
             <button
-              className="btn btn-xs border-none bg-indigo-600 text-white disabled:opacity-30"
+              className="btn btn-primary btn-xs disabled:opacity-30"
               onClick={savePlan}
               disabled={!planNameDraft.trim()}
               aria-label="Save plan"
             >
-              💾
+              <Save className="h-3.5 w-3.5" />
             </button>
           </div>
           {plans.length === 0 && (
@@ -515,11 +552,11 @@ export function WorldView() {
                 {p.name}
               </button>
               <button
-                className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
+                className="btn btn-ghost btn-xs px-1 font-normal text-error"
                 onClick={() => deletePlan(p.id)}
                 aria-label={`Delete plan ${p.name}`}
               >
-                🗑
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
@@ -562,12 +599,12 @@ export function WorldView() {
               onKeyDown={(e) => e.key === 'Enter' && saveViewpoint()}
             />
             <button
-              className="btn btn-xs border-none bg-indigo-600 text-white disabled:opacity-30"
+              className="btn btn-primary btn-xs disabled:opacity-30"
               onClick={saveViewpoint}
               disabled={!viewpointNameDraft.trim()}
               aria-label="Save current view as a viewpoint"
             >
-              📍
+              <MapPin className="h-3.5 w-3.5" />
             </button>
           </div>
           {viewpoints.length === 0 && (
@@ -589,7 +626,7 @@ export function WorldView() {
                 disabled={i === 0}
                 aria-label={`Move ${v.name} earlier`}
               >
-                ↑
+                <ChevronUp className="h-3.5 w-3.5" />
               </button>
               <button
                 className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
@@ -597,14 +634,14 @@ export function WorldView() {
                 disabled={i === viewpoints.length - 1}
                 aria-label={`Move ${v.name} later`}
               >
-                ↓
+                <ChevronDown className="h-3.5 w-3.5" />
               </button>
               <button
-                className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
+                className="btn btn-ghost btn-xs px-1 font-normal text-error"
                 onClick={() => sandboxRef.current?.deleteViewpoint(v.id)}
                 aria-label={`Delete viewpoint ${v.name}`}
               >
-                🗑
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
@@ -618,7 +655,7 @@ export function WorldView() {
                   disabled={briefState.currentIndex <= 0}
                   aria-label="Previous viewpoint"
                 >
-                  ⏮
+                  <SkipBack className="h-3.5 w-3.5" />
                 </button>
                 <span className="text-[10px] text-base-content/60">
                   {briefState.currentIndex + 1} / {viewpoints.length}
@@ -630,7 +667,7 @@ export function WorldView() {
                   disabled={briefState.currentIndex >= viewpoints.length - 1}
                   aria-label="Next viewpoint"
                 >
-                  ⏭
+                  <SkipForward className="h-3.5 w-3.5" />
                 </button>
               </div>
             </>
@@ -651,7 +688,7 @@ export function WorldView() {
               disabled={features.length === 0}
               aria-label="Undo last placed feature"
             >
-              ↩ Undo
+              <Undo2 className="h-3.5 w-3.5" /> Undo
             </button>
           </div>
           {features.length === 0 && (
@@ -661,7 +698,7 @@ export function WorldView() {
             <div
               key={f.id}
               className={`flex items-center gap-1 rounded px-1 py-0.5 ${
-                selectedFeatureId === f.id ? 'bg-indigo-600/10' : ''
+                selectedFeatureId === f.id ? 'bg-primary/10' : ''
               }`}
             >
               {renamingId === f.id ? (
@@ -705,14 +742,14 @@ export function WorldView() {
                     onClick={() => startRename(f)}
                     aria-label={`Rename ${f.name}`}
                   >
-                    ✎
+                    <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
+                    className="btn btn-ghost btn-xs px-1 font-normal text-error"
                     onClick={() => deleteFeature(f.id)}
                     aria-label={`Delete ${f.name}`}
                   >
-                    🗑
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </>
               )}
@@ -733,7 +770,8 @@ export function WorldView() {
                 setActiveVehicle(v.id);
               }}
             >
-              <kbd className="kbd kbd-xs">{v.key}</kbd> {v.label}
+              <kbd className="kbd kbd-xs">{v.key}</kbd> {v.Icon && <v.Icon className="h-4 w-4" />}{' '}
+              {v.label}
             </button>
           ))}
           <div className="px-2 pb-1 text-[10px] text-base-content/40">
@@ -763,7 +801,7 @@ export function WorldView() {
       {apiKey && !fatal && hudLines.length > 0 && (
         <div className="rounded-box fixed bottom-8 right-4 z-40 bg-base-100 px-4 py-2 text-right font-mono text-sm shadow-md">
           {hudLines.map((line, i) => (
-            <div key={line} className={i === 0 ? 'font-bold text-indigo-600' : ''}>
+            <div key={line} className={i === 0 ? 'font-bold text-primary' : ''}>
               {line}
             </div>
           ))}
@@ -791,23 +829,31 @@ export function WorldView() {
               onClick={() => sandboxRef.current?.captureShot()}
               title="Download a clean tiles-only PNG + matching pose JSON"
             >
-              📸 Capture
+              <Camera className="h-4 w-4" /> Capture
             </button>
             <button className="btn btn-sm bg-base-100 shadow-md" onClick={copyPose}>
-              {poseCopied ? '✓ Copied' : '📋 Copy pose'}
+              {poseCopied ? (
+                <>
+                  <Check className="h-4 w-4" /> Copied
+                </>
+              ) : (
+                <>
+                  <Clipboard className="h-4 w-4" /> Copy pose
+                </>
+              )}
             </button>
             <button
-              className="btn btn-sm border-none bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
+              className="btn btn-primary btn-sm shadow-md"
               onClick={() => setShowImport(true)}
             >
-              📥 Import intel
+              <Import className="h-4 w-4" /> Import intel
             </button>
             <button
-              className="btn btn-sm bg-base-100 text-red-500 shadow-md"
+              className="btn btn-sm bg-base-100 text-error shadow-md"
               onClick={() => sandboxRef.current?.clearDetections()}
               title="Remove deployed detections"
             >
-              🗑
+              <Trash2 className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -835,7 +881,7 @@ export function WorldView() {
       {apiKey && !fatal && loading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-200/80">
           <div className="rounded-box flex items-center gap-3 bg-base-100 px-6 py-4 shadow-md">
-            <span className="loading loading-spinner text-indigo-600" />
+            <span className="loading loading-spinner text-primary" />
             <span className="text-sm">Streaming Google Photorealistic 3D Tiles…</span>
           </div>
         </div>
@@ -845,12 +891,9 @@ export function WorldView() {
       {fatal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-200/80">
           <div className="rounded-box max-w-md bg-base-100 p-6 text-center shadow-md">
-            <div className="mb-2 text-lg font-semibold text-red-500">Tile service error</div>
+            <div className="mb-2 text-lg font-semibold text-error">Tile service error</div>
             <p className="mb-4 text-sm text-base-content/70">{fatal}</p>
-            <button
-              className="btn btn-sm border-none bg-indigo-600 text-white hover:bg-indigo-700"
-              onClick={resetKey}
-            >
+            <button className="btn btn-primary btn-sm" onClick={resetKey}>
               Reset API key
             </button>
           </div>
@@ -861,7 +904,9 @@ export function WorldView() {
       {!apiKey && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-200">
           <div className="rounded-box w-full max-w-lg bg-base-100 p-8 shadow-md">
-            <div className="mb-1 text-xl font-bold">🛰 Google Map Tiles API key</div>
+            <div className="mb-1 flex items-center gap-2 text-xl font-bold">
+              <Satellite className="h-5 w-5" /> Google Map Tiles API key
+            </div>
             <p className="mb-4 text-sm text-base-content/60">
               Enable <b>Map Tiles API</b> in Google Cloud Console, create an API key, and paste it
               here. Stored only in this browser&apos;s localStorage.
@@ -875,10 +920,7 @@ export function WorldView() {
                 onChange={(e) => setKeyDraft(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && submitKey()}
               />
-              <button
-                className="btn border-none bg-indigo-600 text-white hover:bg-indigo-700"
-                onClick={submitKey}
-              >
+              <button className="btn btn-primary" onClick={submitKey}>
                 Start
               </button>
             </div>
