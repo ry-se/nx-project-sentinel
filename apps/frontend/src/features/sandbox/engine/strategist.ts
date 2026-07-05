@@ -461,7 +461,8 @@ export class StrategistController {
       // live LOS sweep from the observer to wherever the mouse is
       if (this.draft.length === 1 && this.hover) {
         this.previewRoot.add(
-          buildLosGroup(this.draft[0], this.hover, false, this.raycaster, this.tiles).group
+          buildLosGroup(this.draft[0], this.hover, false, this.raycaster, this.tiles, this.geoFrame)
+            .group
         );
         this.previewRoot.traverse((o) => o.layers.set(1));
       }
@@ -507,7 +508,7 @@ export class StrategistController {
   private finalizeDistance(): void {
     const pts = [...this.draft];
     const total = pathLength(pts);
-    const g = buildDistanceGroup(pts);
+    const g = buildDistanceGroup(pts, this.geoFrame);
     const name = `Distance ${this.countOfType('distance') + 1}`;
     const pf = serializeFeature('distance', pts, name, this.geoFrame);
     this.addFeature(pf, g);
@@ -538,7 +539,7 @@ export class StrategistController {
 
   private finalizeLos(): void {
     const [obs, tgt] = this.draft;
-    const result = buildLosGroup(obs, tgt, true, this.raycaster, this.tiles);
+    const result = buildLosGroup(obs, tgt, true, this.raycaster, this.tiles, this.geoFrame);
     const name = `LOS ${this.countOfType('los') + 1}`;
     const pf = serializeFeature('los', [obs, tgt], name, this.geoFrame);
     this.addFeature(pf, result.group);
@@ -564,7 +565,7 @@ export class StrategistController {
     const pts = [...this.draft];
     const name =
       window.prompt('Name this axis of advance:', `AXIS-${this.countOfType('axis') + 1}`) ?? 'AXIS';
-    const g = buildAxisGroup(pts, name);
+    const g = buildAxisGroup(pts, name, this.geoFrame);
     const pf = serializeFeature('axis', pts, name, this.geoFrame);
     this.addFeature(pf, g);
     this.onStatus(`AXIS ${name}: ${fmtDist(pathLength(pts))}`);

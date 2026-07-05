@@ -57,8 +57,8 @@ describe('control measures — serializeFeature/rebuildFeature round-trip (todo 
       expect(pf.type).toBe(type);
       expect(pf.points.local).toEqual(pts.map((p) => ({ x: p.x, y: p.y, z: p.z })));
 
-      const rebuiltOnce = rebuildFeature(pf, { raycaster, tiles: tiles.group });
-      const rebuiltTwice = rebuildFeature(pf, { raycaster, tiles: tiles.group });
+      const rebuiltOnce = rebuildFeature(pf, { raycaster, tiles: tiles.group, geoFrame });
+      const rebuiltTwice = rebuildFeature(pf, { raycaster, tiles: tiles.group, geoFrame });
 
       expect(rebuiltOnce).toBeInstanceOf(Group);
       expect(rebuiltOnce.children.length).toBeGreaterThan(0);
@@ -76,7 +76,7 @@ describe('control measures — serializeFeature/rebuildFeature round-trip (todo 
     const tiles = bareTiles();
     const geoFrame = new GeoFrame(tiles, ANCHOR);
     const pf = serializeFeature('axis', POINTS_BY_TYPE.axis, 'Test axis', geoFrame);
-    const g = rebuildFeature(pf, { raycaster: new Raycaster(), tiles: tiles.group });
+    const g = rebuildFeature(pf, { raycaster: new Raycaster(), tiles: tiles.group, geoFrame });
 
     // 1 centerline (Line) + 2 band segments (Mesh, one per pair of the 3 points) +
     // 1 arrowhead (Mesh) + 3 point markers (Mesh) + 1 label (Sprite) = 8 children.
@@ -91,7 +91,7 @@ describe('control measures — serializeFeature/rebuildFeature round-trip (todo 
     const types: Array<'boundary' | 'phaseline' | 'loa'> = ['boundary', 'phaseline', 'loa'];
     const colors = types.map((type) => {
       const pf = serializeFeature(type, POINTS_BY_TYPE[type], `Test ${type}`, geoFrame);
-      const g = rebuildFeature(pf, { raycaster, tiles: tiles.group });
+      const g = rebuildFeature(pf, { raycaster, tiles: tiles.group, geoFrame });
       const line = g.children.find((c) => c.type === 'Line') as unknown as {
         material: { color: { getHex(): number } };
       };

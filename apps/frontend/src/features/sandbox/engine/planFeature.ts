@@ -148,16 +148,44 @@ export function label(at: Vector3, text: string): Sprite {
   return sprite;
 }
 
+// ---------- bearings (todo 16) ----------
+
+/** Mils = degrees x 6400/360, rounded to whole mils (invariant 2). */
+export function degToMils(deg: number): number {
+  return Math.round((deg * 6400) / 360);
+}
+
+/** True GRID bearing (0-360, 0 = grid north) of the direction from `from` to `to`, via
+ * `geoFrame.compassHeadingDeg` — never a raw local-frame `atan2` (invariant 1), since the
+ * tiles' local axes are not north-aligned. */
+export function computeBearingDeg(from: Vector3, to: Vector3, geoFrame: GeoFrame): number {
+  const dir = new Vector3(to.x - from.x, 0, to.z - from.z);
+  return geoFrame.compassHeadingDeg(dir);
+}
+
+/** e.g. "095°G/1689 mils" — the "G" marks grid north explicitly (invariant 3: the north
+ * reference MUST be stated wherever a bearing is shown). */
+export function formatBearing(deg: number): string {
+  const rounded = Math.round(deg) % 360;
+  return `${rounded.toString().padStart(3, '0')}°G/${degToMils(deg)} mils`;
+}
+
 // ---------- pure group builders (data-in, Group-out — shared by live draft + rebuild) ----------
 
-export function buildDistanceGroup(pts: Vector3[]): Group {
+export function buildDistanceGroup(pts: Vector3[], geoFrame: GeoFrame): Group {
   const total = pathLength(pts);
+  const bearing = computeBearingDeg(pts[0], pts[pts.length - 1], geoFrame);
   const g = new Group();
   const line = new Line(new BufferGeometry().setFromPoints(pts), MAT_MEASURE);
   line.renderOrder = 999;
   g.add(line);
   for (const p of pts) g.add(marker(p, 0x35d4ff));
-  g.add(label(pts[pts.length - 1].clone().add(new Vector3(0, 12, 0)), fmtDist(total)));
+  g.add(
+    label(
+      pts[pts.length - 1].clone().add(new Vector3(0, 12, 0)),
+      `${fmtDist(total)} · ${formatBearing(bearing)}`
+    )
+  );
   return g;
 }
 
@@ -351,7 +379,7 @@ const AXIS_COLOR = 0x7e57c2;
 
 /** Axis of advance — a centerline + arrowhead at the final point + a translucent width
  * corridor (one flat quad per segment). */
-export function buildAxisGroup(pts: Vector3[], name: string): Group {
+export function buildAxisGroup(pts: Vector3[], name: string, geoFrame: GeoFrame): Group {
   const g = new Group();
   const line = new Line(
     new BufferGeometry().setFromPoints(pts),
@@ -378,7 +406,8 @@ export function buildAxisGroup(pts: Vector3[], name: string): Group {
   }
 
   for (const p of pts) g.add(marker(p, AXIS_COLOR, 1.5));
-  g.add(label(last.clone().add(new Vector3(0, 14, 0)), `AXIS ${name}`));
+  const bearing = computeBearingDeg(pts[0], last, geoFrame);
+  g.add(label(last.clone().add(new Vector3(0, 14, 0)), `AXIS ${name} · ${formatBearing(bearing)}`));
   return g;
 }
 
@@ -408,13 +437,15 @@ export function buildLosGroup(
   tgtGround: Vector3,
   report: boolean,
   raycaster: Raycaster,
-  tiles: Object3D
+  tiles: Object3D,
+  geoFrame: GeoFrame
 ): LosBuildResult {
   const obs = obsGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
   const tgt = tgtGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
   const dir = tgt.clone().sub(obs);
   const dist = dir.length();
   dir.normalize();
+  const bearing = computeBearingDeg(obsGround, tgtGround, geoFrame);
 
   raycaster.set(obs, dir);
   raycaster.far = dist - 2;
@@ -429,7 +460,14 @@ export function buildLosGroup(
     line.renderOrder = 999;
     g.add(line);
     g.add(marker(tgt, 0x55ff55));
-    if (report) g.add(label(tgt.clone().add(new Vector3(0, 14, 0)), `CLEAR ${fmtDist(dist)}`));
+    if (report) {
+      g.add(
+        label(
+          tgt.clone().add(new Vector3(0, 14, 0)),
+          `CLEAR ${fmtDist(dist)} · ${formatBearing(bearing)}`
+        )
+      );
+    }
     return { group: g, blocked: false, distanceM: dist };
   }
 
@@ -450,7 +488,7 @@ export function buildLosGroup(
     g.add(
       label(
         blockedHit.point.clone().add(new Vector3(0, 14, 0)),
-        `BLOCKED @ ${fmtDist(blockedHit.distance)}`
+        `BLOCKED @ ${fmtDist(blockedHit.distance)} · ${formatBearing(bearing)}`
       )
     );
   }
@@ -492,6 +530,8 @@ export function serializeFeature(
 export interface RebuildContext {
   raycaster: Raycaster;
   tiles: Object3D;
+  /** Needed to recompute bearing labels (todo 16) identically to how they were drawn. */
+  geoFrame: GeoFrame;
 }
 
 /**
@@ -503,19 +543,19 @@ export function rebuildFeature(pf: PlanFeature, ctx: RebuildContext): Group {
   const pts = pf.points.local.map((p) => new Vector3(p.x, p.y, p.z));
   switch (pf.type) {
     case 'distance':
-      return buildDistanceGroup(pts);
+      return buildDistanceGroup(pts, ctx.geoFrame);
     case 'focus':
       return buildFocusGroup(pts, pf.name);
     case 'arc':
       return buildArcGroup(pts);
     case 'los':
-      return buildLosGroup(pts[0], pts[1], true, ctx.raycaster, ctx.tiles).group;
+      return buildLosGroup(pts[0], pts[1], true, ctx.raycaster, ctx.tiles, ctx.geoFrame).group;
     case 'boundary':
     case 'phaseline':
     case 'loa':
       return buildLinearMeasureGroup(pts, pf.type, pf.name);
     case 'axis':
-      return buildAxisGroup(pts, pf.name);
+      return buildAxisGroup(pts, pf.name, ctx.geoFrame);
     case 'objective':
       return buildObjectiveGroup(pts, pf.name);
     case 'unit': {

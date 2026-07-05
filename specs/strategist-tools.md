@@ -161,6 +161,23 @@ doesn't have today (only `localToGeo`); the todo's own scope marks this overlay
 optional. No toggle for it exists yet — a future todo would add the inverse conversion
 first.
 
+## Bearings (`planFeature.ts`)
+
+Every directional feature's label states a true GRID bearing (both degrees and mils) via
+`computeBearingDeg(from, to, geoFrame)` (`planFeature.ts`) — the direction's `compassHeadingDeg`
+against `geoFrame`'s own ENU axes, never a raw local-frame `atan2` (which isn't
+north-aligned once the tiles group is anchor-recentered; invariant 1). `degToMils(deg)` is
+`deg * 6400/360`, rounded (invariant 2). `formatBearing(deg)` renders e.g. `"095°G/1689
+mils"` — the `G` marks GRID north explicitly, since a bearing is meaningless without its
+reference (invariant 3).
+
+Threaded into the labels of: `buildDistanceGroup` (bearing first→last point, appended
+after the length: `"340 m · 095°G/1689 mils"`), `buildLosGroup` (bearing obs→tgt, appended
+to the CLEAR/BLOCKED text), and `buildAxisGroup` (bearing first→last point, appended to
+the `AXIS <name>` text). All three now take a `geoFrame: GeoFrame` param — `RebuildContext`
+(the `rebuildFeature` seam) correspondingly carries `geoFrame` so a reloaded feature's
+bearing label matches what was drawn (round-trip invariant, todo 11).
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

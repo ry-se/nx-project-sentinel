@@ -98,8 +98,8 @@ describe('planFeature — serializeFeature/rebuildFeature round-trip (todo 11)',
         expect(geo.lon).toBeCloseTo(ANCHOR.lon, 1);
       }
 
-      const rebuiltOnce = rebuildFeature(pf, { raycaster, tiles: tiles.group });
-      const rebuiltTwice = rebuildFeature(pf, { raycaster, tiles: tiles.group });
+      const rebuiltOnce = rebuildFeature(pf, { raycaster, tiles: tiles.group, geoFrame });
+      const rebuiltTwice = rebuildFeature(pf, { raycaster, tiles: tiles.group, geoFrame });
 
       expect(rebuiltOnce).toBeInstanceOf(Group);
       expect(rebuiltOnce.children.length).toBeGreaterThan(0);
@@ -117,7 +117,11 @@ describe('planFeature — serializeFeature/rebuildFeature round-trip (todo 11)',
     const pf = serializeFeature('focus', POINTS_BY_TYPE.focus, 'AO-Falcon', geoFrame);
     expect(pf.name).toBe('AO-Falcon');
 
-    const rebuilt = rebuildFeature(pf, { raycaster: new Raycaster(), tiles: tiles.group });
+    const rebuilt = rebuildFeature(pf, {
+      raycaster: new Raycaster(),
+      tiles: tiles.group,
+      geoFrame,
+    });
     expect(rebuilt.children.some((c) => c.type === 'Sprite')).toBe(true);
   });
 });
@@ -150,7 +154,8 @@ describe('buildLosGroup — blocked/clear raycast (unchanged by the pure-functio
       new Vector3(100, 0, 0),
       true,
       new Raycaster(),
-      tiles.group
+      tiles.group,
+      new GeoFrame(tiles, ANCHOR)
     );
     expect(result.blocked).toBe(false);
     expect(result.distanceM).toBeCloseTo(100, 0);
@@ -175,7 +180,8 @@ describe('buildLosGroup — blocked/clear raycast (unchanged by the pure-functio
       new Vector3(100, 0, 0),
       true,
       new Raycaster(),
-      tiles.group
+      tiles.group,
+      new GeoFrame(tiles, ANCHOR)
     );
     expect(result.blocked).toBe(true);
     expect(result.blockedAtM).toBeCloseTo(50, 0);

@@ -91,7 +91,11 @@ describe('unit symbol — serializeFeature/rebuildFeature round-trip (todo 14)',
       expect(pf.type).toBe('unit');
       expect(pf.metadata).toEqual({ affiliation, echelon });
 
-      const rebuilt = rebuildFeature(pf, { raycaster: new Raycaster(), tiles: tiles.group });
+      const rebuilt = rebuildFeature(pf, {
+        raycaster: new Raycaster(),
+        tiles: tiles.group,
+        geoFrame,
+      });
       expect(rebuilt).toBeInstanceOf(Group);
       expect(rebuilt.children.some((c) => c.type === 'Sprite')).toBe(true);
     }
