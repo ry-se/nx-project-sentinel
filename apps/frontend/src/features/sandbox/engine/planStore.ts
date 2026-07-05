@@ -6,6 +6,16 @@ import type { Viewpoint } from './viewpoint';
  * mismatch (invariant 3) rather than silently misreading an older/newer format. */
 export const PLAN_SCHEMA_VERSION = 1;
 
+/** A plan-defined phase ("Move to FUP", "Assault", "Consolidation") — todo 25. Features
+ * tag themselves to a phase id via `PlanFeature.metadata.phase`; the phase LIST itself
+ * lives at the `Plan` level since phases are shared across every feature, not per-feature
+ * data. */
+export interface PlanPhase {
+  id: string;
+  name: string;
+  order: number;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -18,6 +28,9 @@ export interface Plan {
   viewpoints: Viewpoint[];
   /** Defaults to EXERCISE (todo 22 invariant 2) — never silently blank. */
   classification: ClassificationLevel;
+  /** The plan's phase list (todo 25 invariant 4 — survives save/load/export), ordered by
+   * `order`. Empty for a plan with no phasing (every feature reads as `ALL_PHASES`). */
+  phases: PlanPhase[];
 }
 
 export class UnknownPlanSchemaVersionError extends Error {
@@ -60,7 +73,8 @@ export function savePlan(
   anchor: { lat: number; lon: number },
   now: string,
   viewpoints: Viewpoint[] = [],
-  classification: ClassificationLevel = DEFAULT_CLASSIFICATION
+  classification: ClassificationLevel = DEFAULT_CLASSIFICATION,
+  phases: PlanPhase[] = []
 ): Plan {
   const existing = readAllPlans().find((p) => p.name === name);
   const plan: Plan = {
@@ -73,6 +87,7 @@ export function savePlan(
     features,
     viewpoints,
     classification,
+    phases,
   };
   localStorage.setItem(storageKey(plan.id), JSON.stringify(plan));
   return plan;

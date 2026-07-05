@@ -17,8 +17,11 @@ import {
   Map,
   MapPin,
   MousePointer2,
+  Pause,
   Pencil,
   Plane,
+  Play,
+  Plus,
   Radar,
   Ruler,
   Satellite,
@@ -49,7 +52,8 @@ import {
   type ClassificationLevel,
   DEFAULT_CLASSIFICATION,
 } from './engine/classification';
-import type { Plan } from './engine/planStore';
+import { ALL_PHASES } from './engine/planFeature';
+import type { Plan, PlanPhase } from './engine/planStore';
 import type { Viewpoint } from './engine/viewpoint';
 import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
 import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strategist';
@@ -137,6 +141,10 @@ export function WorldView() {
     useState<ClassificationLevel>(DEFAULT_CLASSIFICATION);
   const [viewpointVersion, setViewpointVersion] = useState(0);
   const [viewpointNameDraft, setViewpointNameDraft] = useState('');
+  const [phaseNameDraft, setPhaseNameDraft] = useState('');
+  const [phaseFilter, setPhaseFilterState] = useState<string>(ALL_PHASES);
+  const [renamingPhaseId, setRenamingPhaseId] = useState<string | null>(null);
+  const [renamePhaseDraft, setRenamePhaseDraft] = useState('');
 
   const features = useMemo<FeatureSummary[]>(
     () => sandboxRef.current?.listFeatures() ?? [],
@@ -154,6 +162,12 @@ export function WorldView() {
     () => sandboxRef.current?.listViewpoints() ?? [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- viewpointVersion is the refresh signal
     [viewpointVersion]
+  );
+
+  const phases = useMemo<PlanPhase[]>(
+    () => sandboxRef.current?.listPhases() ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- featureVersion is the refresh signal (every phase mutation also calls onFeaturesChanged)
+    [featureVersion]
   );
 
   useEffect(() => {
@@ -282,7 +296,10 @@ export function WorldView() {
     setSelectedFeatureId(null);
     setFeatureVersion((v) => v + 1);
     const sb = sandboxRef.current;
-    if (sb) setClassificationState(sb.getClassification());
+    if (sb) {
+      setClassificationState(sb.getClassification());
+      setPhaseFilterState(sb.getPhaseFilter());
+    }
   }, []);
 
   const selectClassification = useCallback((level: ClassificationLevel) => {
@@ -327,6 +344,110 @@ export function WorldView() {
     [viewpoints]
   );
 
+  const selectViewpointPhase = useCallback((viewpointId: string, phaseId: string) => {
+    sandboxRef.current?.setViewpointPhase(
+      viewpointId,
+      phaseId === ALL_PHASES ? undefined : phaseId
+    );
+    setViewpointVersion((v) => v + 1);
+  }, []);
+
+  // ---------- phase tagging (todo 25) ----------
+
+  const addPhase = useCallback(() => {
+    const trimmed = phaseNameDraft.trim();
+    if (!trimmed || !sandboxRef.current) return;
+    sandboxRef.current.addPhase(trimmed);
+    setPhaseNameDraft('');
+    setFeatureVersion((v) => v + 1);
+  }, [phaseNameDraft]);
+
+  const startRenamePhase = useCallback((phase: PlanPhase) => {
+    setRenamingPhaseId(phase.id);
+    setRenamePhaseDraft(phase.name);
+  }, []);
+
+  const commitRenamePhase = useCallback(
+    (id: string) => {
+      const trimmed = renamePhaseDraft.trim();
+      if (trimmed) sandboxRef.current?.renamePhase(id, trimmed);
+      setRenamingPhaseId(null);
+      setFeatureVersion((v) => v + 1);
+    },
+    [renamePhaseDraft]
+  );
+
+  const movePhase = useCallback(
+    (id: string, direction: -1 | 1) => {
+      const ids = phases.map((p) => p.id);
+      const idx = ids.indexOf(id);
+      const swapWith = idx + direction;
+      if (idx === -1 || swapWith < 0 || swapWith >= ids.length) return;
+      [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+      sandboxRef.current?.reorderPhases(ids);
+      setFeatureVersion((v) => v + 1);
+    },
+    [phases]
+  );
+
+  const deletePhase = useCallback(
+    (id: string) => {
+      sandboxRef.current?.deletePhase(id);
+      if (phaseFilter === id) setPhaseFilterState(ALL_PHASES);
+      setFeatureVersion((v) => v + 1);
+    },
+    [phaseFilter]
+  );
+
+  const selectPhaseFilter = useCallback((phaseId: string) => {
+    setPhaseFilterState(phaseId);
+    sandboxRef.current?.setPhaseFilter(phaseId);
+  }, []);
+
+  const selectFeaturePhase = useCallback((featureId: string, phaseId: string) => {
+    sandboxRef.current?.setFeaturePhase(featureId, phaseId);
+    setFeatureVersion((v) => v + 1);
+  }, []);
+
+  const clearAllFeatures = useCallback(() => {
+    sandboxRef.current?.clearAll();
+    setPhaseFilterState(ALL_PHASES);
+  }, []);
+
+  // ---------- timeline (todo 26) ----------
+
+  const scrubTimeline = useCallback((index: number) => {
+    sandboxRef.current?.scrubToPhaseIndex(index);
+    setPhaseFilterState(sandboxRef.current?.getPhaseFilter() ?? ALL_PHASES);
+  }, []);
+
+  const stepTimeline = useCallback((direction: -1 | 1) => {
+    if (direction === 1) sandboxRef.current?.stepTimelineNext();
+    else sandboxRef.current?.stepTimelinePrevious();
+    setPhaseFilterState(sandboxRef.current?.getPhaseFilter() ?? ALL_PHASES);
+  }, []);
+
+  const [armedFeatureId, setArmedFeatureId] = useState<string | null>(null);
+
+  const armSetUnitPosition = useCallback((featureId: string, phaseId: string) => {
+    sandboxRef.current?.armSetUnitPhasePosition(featureId, phaseId);
+    setArmedFeatureId(featureId);
+  }, []);
+
+  // Poll whether the armed capture has resolved (a map click consumed it) so the "click
+  // the map" affordance clears itself — same render-loop-driven pattern as briefState/
+  // timelineState above.
+  useEffect(() => {
+    if (!armedFeatureId) return;
+    const timer = window.setInterval(() => {
+      if (!sandboxRef.current?.isArmedForPhasePosition()) {
+        setArmedFeatureId(null);
+        setFeatureVersion((v) => v + 1);
+      }
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [armedFeatureId]);
+
   // Brief-playback step indicator (todo 20) — the interpolation is driven by the render
   // loop, not a React callback, so poll it (same pattern as the camera-pose readout below).
   const [briefState, setBriefState] = useState<{ currentIndex: number; isPlaying: boolean }>({
@@ -338,6 +459,34 @@ export function WorldView() {
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setBriefState(sb.getBriefPlaybackState());
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [apiKey, loading, fatal, mode]);
+
+  // Timeline step indicator (todo 26) — same poll pattern as brief playback above; the
+  // phase-to-phase interpolation is also render-loop-driven, not a React callback.
+  const [timelineState, setTimelineState] = useState<{ currentIndex: number; isPlaying: boolean }>({
+    currentIndex: 0,
+    isPlaying: false,
+  });
+  useEffect(() => {
+    if (!apiKey || loading || fatal || mode !== 'strategist') return;
+    const timer = window.setInterval(() => {
+      const sb = sandboxRef.current;
+      if (sb) setTimelineState(sb.getTimelineState());
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [apiKey, loading, fatal, mode]);
+
+  // Rehearsal indicator (todo 27) — the brief-sequence index doubles as the ONE combined
+  // step index (invariant 1); this poll only tracks whether a guided rehearsal (vs. plain
+  // manual brief-stepping) is currently driving it.
+  const [rehearsing, setRehearsing] = useState(false);
+  useEffect(() => {
+    if (!apiKey || loading || fatal || mode !== 'strategist') return;
+    const timer = window.setInterval(() => {
+      const sb = sandboxRef.current;
+      if (sb) setRehearsing(sb.isRehearsing());
     }, 200);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
@@ -499,7 +648,7 @@ export function WorldView() {
             </button>
             <button
               className="btn btn-ghost btn-sm justify-start font-normal text-error hover:bg-error/10"
-              onClick={() => sandboxRef.current?.clearAll()}
+              onClick={clearAllFeatures}
             >
               <Trash2 className="h-4 w-4" /> Clear All
             </button>
@@ -562,6 +711,36 @@ export function WorldView() {
                     {f.mgrs && (
                       <span className="font-mono text-[9px] text-base-content/40">{f.mgrs}</span>
                     )}
+                  </button>
+                )}
+                {renamingId !== f.id && phases.length > 0 && (
+                  <select
+                    aria-label={`Phase for ${f.name}`}
+                    className="select select-bordered select-xs w-20 font-normal normal-case"
+                    value={sandboxRef.current?.getFeaturePhase(f.id) ?? ALL_PHASES}
+                    onChange={(e) => selectFeaturePhase(f.id, e.target.value)}
+                  >
+                    <option value={ALL_PHASES}>All</option>
+                    {phases.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {renamingId !== f.id && f.type === 'unit' && phases.length > 0 && (
+                  <button
+                    className={`btn btn-xs px-1 font-normal ${
+                      armedFeatureId === f.id ? 'btn-primary' : 'btn-ghost'
+                    }`}
+                    onClick={() => {
+                      const phaseId = phases[timelineState.currentIndex]?.id;
+                      if (phaseId) armSetUnitPosition(f.id, phaseId);
+                    }}
+                    title={`Click the map to set this unit's position for "${phases[timelineState.currentIndex]?.name ?? ''}"`}
+                    aria-label={`Set position for ${f.name} at current timeline phase`}
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {renamingId !== f.id && (
@@ -662,6 +841,135 @@ export function WorldView() {
             </div>
           </PanelSection>
 
+          <PanelSection title={`Phases (${phases.length})`}>
+            <div className="flex gap-1 px-2">
+              <input
+                aria-label="Phase name"
+                className="input input-bordered input-xs flex-1"
+                placeholder="Move to FUP"
+                value={phaseNameDraft}
+                onChange={(e) => setPhaseNameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addPhase()}
+              />
+              <button
+                className="btn btn-primary btn-xs disabled:opacity-30"
+                onClick={addPhase}
+                disabled={!phaseNameDraft.trim()}
+                aria-label="Add phase"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {phases.length === 0 && (
+              <div className="px-2 py-1 text-xs text-base-content/40">No phases defined yet</div>
+            )}
+            {phases.map((p, i) => (
+              <div key={p.id} className="flex items-center gap-1 rounded px-1 py-0.5">
+                <span className="text-[10px] text-base-content/40">{i + 1}</span>
+                {renamingPhaseId === p.id ? (
+                  <input
+                    autoFocus
+                    aria-label={`Rename ${p.name}`}
+                    className="input input-bordered input-xs flex-1"
+                    value={renamePhaseDraft}
+                    onChange={(e) => setRenamePhaseDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRenamePhase(p.id);
+                      if (e.key === 'Escape') setRenamingPhaseId(null);
+                    }}
+                    onBlur={() => commitRenamePhase(p.id)}
+                  />
+                ) : (
+                  <button
+                    className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                    onClick={() => startRenamePhase(p)}
+                    aria-label={`Rename ${p.name}`}
+                  >
+                    {p.name}
+                  </button>
+                )}
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                  onClick={() => movePhase(p.id, -1)}
+                  disabled={i === 0}
+                  aria-label={`Move ${p.name} earlier`}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                  onClick={() => movePhase(p.id, 1)}
+                  disabled={i === phases.length - 1}
+                  aria-label={`Move ${p.name} later`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal text-error"
+                  onClick={() => deletePhase(p.id)}
+                  aria-label={`Delete phase ${p.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {phases.length > 0 && (
+              <label className="flex flex-col gap-0.5 px-2 pb-1 text-[10px] uppercase tracking-widest text-base-content/40">
+                Show phase
+                <select
+                  className="select select-bordered select-xs font-normal normal-case"
+                  value={phaseFilter}
+                  onChange={(e) => selectPhaseFilter(e.target.value)}
+                >
+                  <option value={ALL_PHASES}>All phases</option>
+                  {phases.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {phases.length > 1 && (
+              <div className="flex flex-col gap-0.5 px-2 pb-1">
+                <span className="text-[10px] uppercase tracking-widest text-base-content/40">
+                  Timeline
+                </span>
+                <input
+                  type="range"
+                  aria-label="Timeline scrubber"
+                  className="range range-primary range-xs"
+                  min={0}
+                  max={phases.length - 1}
+                  value={timelineState.currentIndex}
+                  onChange={(e) => scrubTimeline(Number(e.target.value))}
+                />
+                <div className="flex items-center justify-between">
+                  <button
+                    className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                    onClick={() => stepTimeline(-1)}
+                    disabled={timelineState.currentIndex <= 0}
+                    aria-label="Step to previous phase"
+                  >
+                    <SkipBack className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-[10px] text-base-content/60">
+                    {phases[timelineState.currentIndex]?.name ?? ''}
+                    {timelineState.isPlaying ? ' ▶' : ''}
+                  </span>
+                  <button
+                    className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                    onClick={() => stepTimeline(1)}
+                    disabled={timelineState.currentIndex >= phases.length - 1}
+                    aria-label="Step to next phase"
+                  >
+                    <SkipForward className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </PanelSection>
+
           <PanelSection title="Brief sequence">
             <div className="flex gap-1 px-2">
               <input
@@ -694,6 +1002,21 @@ export function WorldView() {
                 >
                   {v.name}
                 </button>
+                {phases.length > 0 && (
+                  <select
+                    aria-label={`Phase for ${v.name}`}
+                    className="select select-bordered select-xs w-20 font-normal normal-case"
+                    value={v.phaseId ?? ALL_PHASES}
+                    onChange={(e) => selectViewpointPhase(v.id, e.target.value)}
+                  >
+                    <option value={ALL_PHASES}>—</option>
+                    {phases.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button
                   className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
                   onClick={() => moveViewpoint(v.id, -1)}
@@ -747,6 +1070,39 @@ export function WorldView() {
               </>
             )}
           </PanelSection>
+
+          {viewpoints.length > 0 && (
+            <PanelSection title="Rehearse">
+              <div className="flex items-center justify-between px-2 pb-1">
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal"
+                  onClick={() => sandboxRef.current?.cancelRehearsal()}
+                  aria-label="Stop rehearsal"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </button>
+                <span className="text-[10px] text-base-content/60">
+                  {briefState.currentIndex + 1} / {viewpoints.length}
+                  {rehearsing ? ' — rehearsing' : ''}
+                </span>
+                <button
+                  className="btn btn-primary btn-xs px-1 font-normal"
+                  onClick={() =>
+                    rehearsing
+                      ? sandboxRef.current?.pauseRehearsal()
+                      : sandboxRef.current?.startRehearsal()
+                  }
+                  aria-label={rehearsing ? 'Pause rehearsal' : 'Start rehearsal'}
+                >
+                  {rehearsing ? (
+                    <Pause className="h-3.5 w-3.5" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+            </PanelSection>
+          )}
         </PanelRail>
       )}
 

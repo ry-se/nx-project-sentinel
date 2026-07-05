@@ -1,6 +1,6 @@
 import type { ClassificationLevel, Provenance } from './classification';
 import type { GeoPosition } from './geoFrame';
-import type { PlanFeature, PlanFeatureType } from './planFeature';
+import { ALL_PHASES, type PlanFeature, type PlanFeatureType } from './planFeature';
 import type { Affiliation, Echelon } from './unitSymbol';
 
 /** What export needs from a `Plan` (`planStore.ts`) — deliberately narrower than the full
@@ -72,6 +72,10 @@ function featureProperties(
   const props: Record<string, unknown> = { name: pf.name, type: pf.type, classification };
   const provenance = pf.metadata.provenance as Provenance | undefined;
   if (provenance) props.provenance = provenance;
+  // Phase tag (todo 25 invariant 4) — omitted for an untagged/all-phase feature, matching
+  // the `provenance`-optional convention above (no noise for the common untagged case).
+  const phase = pf.metadata.phase;
+  if (typeof phase === 'string' && phase !== ALL_PHASES) props.phase = phase;
   if (pf.type === 'unit') {
     props.affiliation = pf.metadata.affiliation as Affiliation | undefined;
     props.echelon = pf.metadata.echelon as Echelon | undefined;

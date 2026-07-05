@@ -10,6 +10,12 @@ export interface Viewpoint {
   name: string;
   order: number;
   pose: CameraPose;
+  /** The phase this viewpoint narrates (todo 27, Wave 3 R3) — when a guided rehearsal
+   * steps to this viewpoint, the timeline (todo 26) also advances to this phase, so the
+   * audience sees the right vantage of the right phase together. `undefined` (no
+   * declared phase) leaves the timeline exactly where it was — not every viewpoint needs
+   * to narrate a phase change. */
+  phaseId?: string;
 }
 
 /** Restores the camera's exact position AND orientation (invariant 3 — not just

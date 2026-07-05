@@ -495,9 +495,36 @@ export function buildLosGroup(
   return { group: g, blocked: true, distanceM: dist, blockedAtM: blockedHit.distance };
 }
 
+// ---------- phase tagging (todo 25) ----------
+
+/** The sentinel `metadata.phase` value meaning "visible in every phase" — also the
+ * fallback for an untagged feature (invariant 3), never a silently-hidden default. */
+export const ALL_PHASES = 'all-phases';
+
+/** Reads a feature's phase tag, validated against the plan's CURRENT phase-id set
+ * (invariant 1 — no dangling references): a tag naming a phase that no longer exists
+ * (e.g. the phase was deleted) falls back to `ALL_PHASES` rather than hiding the
+ * feature or throwing, mirroring `unitSymbol.ts`'s `readUnitMetadata` defensive-default
+ * pattern for hand-edited/older saved data. */
+export function resolveFeaturePhase(
+  metadata: Record<string, unknown>,
+  validPhaseIds: ReadonlySet<string>
+): string {
+  const phase = metadata.phase;
+  if (typeof phase !== 'string' || phase === ALL_PHASES) return ALL_PHASES;
+  return validPhaseIds.has(phase) ? phase : ALL_PHASES;
+}
+
+/** A feature tagged `ALL_PHASES` is always visible; otherwise visible only when the
+ * active filter is `ALL_PHASES` (no filter) or matches the feature's own phase exactly
+ * (invariant 2 is enforced by the CALLER — this is the pure show/hide predicate only). */
+export function isFeatureVisibleForPhase(featurePhase: string, filterPhase: string): boolean {
+  return featurePhase === ALL_PHASES || filterPhase === ALL_PHASES || featurePhase === filterPhase;
+}
+
 // ---------- serialize / rebuild seam ----------
 
-function toLocalPoint(v: Vector3): LocalPoint {
+export function toLocalPoint(v: Vector3): LocalPoint {
   return { x: v.x, y: v.y, z: v.z };
 }
 

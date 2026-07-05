@@ -102,6 +102,12 @@ function buildSymbolSprite(affiliation: Affiliation, echelon: Echelon, text: str
   return sprite;
 }
 
+/** How far above the clicked ground point the symbol sprite floats — shared by
+ * `buildUnitSymbolGroup` (draw time) and `repositionUnitSymbolGroup` (todo 26 timeline
+ * movement), so a unit repositioned between phases floats at the identical height as one
+ * freshly placed. */
+export const UNIT_SPRITE_LIFT_M = 6;
+
 /** A billboarded unit-symbol sprite at `point` — frame color by affiliation, echelon
  * ticks, and a short designator label (e.g. "2 PL"). */
 export function buildUnitSymbolGroup(
@@ -112,7 +118,17 @@ export function buildUnitSymbolGroup(
 ): Group {
   const g = new Group();
   const sprite = buildSymbolSprite(affiliation, echelon, name);
-  sprite.position.copy(point).add(new Vector3(0, 6, 0));
+  sprite.position.copy(point).add(new Vector3(0, UNIT_SPRITE_LIFT_M, 0));
   g.add(sprite);
   return g;
+}
+
+/** Moves an already-built unit symbol group to a new ground point (todo 26 — a unit's
+ * position advancing between phases) — repositions the sprite CHILD, not the group itself
+ * (the group's own transform stays at origin; `buildUnitSymbolGroup` bakes the absolute
+ * position into the sprite, so moving the group would double-offset it). */
+export function repositionUnitSymbolGroup(group: Group, point: Vector3): void {
+  const sprite = group.children[0];
+  if (!sprite) return;
+  sprite.position.copy(point).add(new Vector3(0, UNIT_SPRITE_LIFT_M, 0));
 }

@@ -32,6 +32,7 @@ import {
   listPlans as listPlansFromStore,
   loadPlan as loadPlanFromStore,
   type Plan,
+  type PlanPhase,
   savePlan as savePlanToStore,
 } from './planStore';
 import { ViewshedController } from './viewshed';
@@ -133,6 +134,7 @@ export interface Sandbox {
   saveViewpoint(name: string): Viewpoint;
   listViewpoints(): Viewpoint[];
   renameViewpoint(id: string, name: string): void;
+  setViewpointPhase(id: string, phaseId: string | undefined): void;
   deleteViewpoint(id: string): void;
   reorderViewpoints(orderedIds: string[]): void;
   restoreViewpoint(id: string): void;
@@ -141,8 +143,32 @@ export interface Sandbox {
   playBriefGoTo(index: number): void;
   cancelBriefPlayback(): void;
   getBriefPlaybackState(): { currentIndex: number; isPlaying: boolean };
+  rehearseGoTo(index: number): void;
+  rehearseNext(): void;
+  rehearsePrevious(): void;
+  startRehearsal(): void;
+  pauseRehearsal(): void;
+  cancelRehearsal(): void;
+  isRehearsing(): boolean;
   exitGroundWalk(): void;
   isGroundWalkActive(): boolean;
+  listPhases(): PlanPhase[];
+  addPhase(name: string): PlanPhase;
+  renamePhase(id: string, name: string): void;
+  reorderPhases(orderedIds: string[]): void;
+  deletePhase(id: string): void;
+  getFeaturePhase(featureId: string): string;
+  setFeaturePhase(featureId: string, phaseId: string): void;
+  getPhaseFilter(): string;
+  setPhaseFilter(phaseId: string): void;
+  scrubToPhaseIndex(index: number): void;
+  stepTimelineNext(): void;
+  stepTimelinePrevious(): void;
+  cancelTimelinePlayback(): void;
+  getTimelineState(): { currentIndex: number; isPlaying: boolean };
+  armSetUnitPhasePosition(featureId: string, phaseId: string): void;
+  cancelSetUnitPhasePosition(): void;
+  isArmedForPhasePosition(): boolean;
   setClassification(level: ClassificationLevel): void;
   getClassification(): ClassificationLevel;
   setOperatorName(name: string): void;
@@ -810,12 +836,14 @@ export function createSandbox(
         anchor,
         new Date().toISOString(),
         strategist.exportViewpoints(),
-        strategist.currentClassification
+        strategist.currentClassification,
+        strategist.exportPhases()
       ),
     loadPlan: (id) => {
       const plan = loadPlanFromStore(id);
       strategist.loadPlan(plan.features);
       strategist.loadViewpoints(plan.viewpoints);
+      strategist.loadPhases(plan.phases);
       strategist.currentClassification = plan.classification;
     },
     setClassification: (level) => {
@@ -842,6 +870,7 @@ export function createSandbox(
     saveViewpoint: (name) => strategist.saveViewpoint(name, getCameraPose()),
     listViewpoints: () => strategist.listViewpoints(),
     renameViewpoint: (id, name) => strategist.renameViewpoint(id, name),
+    setViewpointPhase: (id, phaseId) => strategist.setViewpointPhase(id, phaseId),
     deleteViewpoint: (id) => strategist.deleteViewpoint(id),
     reorderViewpoints: (orderedIds) => strategist.reorderViewpoints(orderedIds),
     restoreViewpoint: (id) => strategist.restoreViewpoint(id),
@@ -850,8 +879,33 @@ export function createSandbox(
     playBriefGoTo: (index) => strategist.playBriefGoTo(index, performance.now()),
     cancelBriefPlayback: () => strategist.cancelBriefPlayback(),
     getBriefPlaybackState: () => strategist.briefPlaybackState,
+    rehearseGoTo: (index) => strategist.rehearseGoTo(index, performance.now()),
+    rehearseNext: () => strategist.rehearseNext(performance.now()),
+    rehearsePrevious: () => strategist.rehearsePrevious(performance.now()),
+    startRehearsal: () => strategist.startRehearsal(performance.now()),
+    pauseRehearsal: () => strategist.pauseRehearsal(),
+    cancelRehearsal: () => strategist.cancelRehearsal(),
+    isRehearsing: () => strategist.isRehearsing,
     exitGroundWalk: () => strategist.exitGroundWalk(),
     isGroundWalkActive: () => strategist.isGroundWalkActive,
+    listPhases: () => strategist.listPhases(),
+    addPhase: (name) => strategist.addPhase(name),
+    renamePhase: (id, name) => strategist.renamePhase(id, name),
+    reorderPhases: (orderedIds) => strategist.reorderPhases(orderedIds),
+    deletePhase: (id) => strategist.deletePhase(id),
+    getFeaturePhase: (featureId) => strategist.getFeaturePhase(featureId),
+    setFeaturePhase: (featureId, phaseId) => strategist.setFeaturePhase(featureId, phaseId),
+    getPhaseFilter: () => strategist.phaseFilterId,
+    setPhaseFilter: (phaseId) => strategist.setPhaseFilter(phaseId),
+    scrubToPhaseIndex: (index) => strategist.scrubToPhaseIndex(index),
+    stepTimelineNext: () => strategist.stepTimelineNext(performance.now()),
+    stepTimelinePrevious: () => strategist.stepTimelinePrevious(performance.now()),
+    cancelTimelinePlayback: () => strategist.cancelTimelinePlayback(),
+    getTimelineState: () => strategist.timelineState,
+    armSetUnitPhasePosition: (featureId, phaseId) =>
+      strategist.armSetUnitPhasePosition(featureId, phaseId),
+    cancelSetUnitPhasePosition: () => strategist.cancelSetUnitPhasePosition(),
+    isArmedForPhasePosition: () => strategist.isArmedForPhasePosition,
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;
