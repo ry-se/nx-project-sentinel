@@ -70,7 +70,10 @@ export function NavBar() {
           <div className="divider divider-horizontal mx-0" />
 
           <Link to="/detect-debug" className="btn btn-sm btn-ghost font-normal">
-            🔬 Detect Debug
+            <span role="img" aria-label="microscope">
+              🔬
+            </span>{' '}
+            Detect Debug
           </Link>
 
           <div className="divider divider-horizontal mx-0" />
