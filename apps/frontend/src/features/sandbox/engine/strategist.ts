@@ -31,6 +31,7 @@ import {
   serializeFeature,
   shoelaceXZ,
 } from './planFeature';
+import { type Affiliation, buildUnitSymbolGroup, type Echelon, ECHELON_ABBR } from './unitSymbol';
 import type { ViewshedController } from './viewshed';
 
 export type StratTool =
@@ -44,7 +45,8 @@ export type StratTool =
   | 'phaseline'
   | 'loa'
   | 'axis'
-  | 'objective';
+  | 'objective'
+  | 'symbol';
 
 const LINEAR_MEASURE_TOOLS: LinearMeasureType[] = ['boundary', 'phaseline', 'loa'];
 const LINEAR_MEASURE_NAME_PREFIX: Record<LinearMeasureType, string> = {
@@ -69,6 +71,7 @@ export const TOOL_HINTS: Record<StratTool, string> = {
   loa: 'LIMIT OF ADVANCE — click waypoints, right-click to finish',
   axis: 'AXIS OF ADVANCE — click waypoints, right-click to finish (arrow points last→first)',
   objective: 'OBJECTIVE — click to place',
+  symbol: 'UNIT SYMBOL — click to place (set affiliation/echelon in the panel first)',
 };
 
 /** A row in the strategist feature list (todo 12) — the panel's read-only view of a feature. */
@@ -93,6 +96,10 @@ export class StrategistController {
   public onFeaturesChanged: () => void = () => {
     /* Custom Hook */
   };
+  /** Affiliation/echelon applied to the NEXT placed `symbol` — set via the strategist
+   * UI's selector, not per-placement (todo 14). */
+  public unitAffiliation: Affiliation = 'friendly';
+  public unitEchelon: Echelon = 'platoon';
 
   private camera: PerspectiveCamera;
   private canvas: HTMLCanvasElement;
@@ -394,6 +401,9 @@ export class StrategistController {
       case 'objective':
         this.finalizeObjective();
         break;
+      case 'symbol':
+        this.finalizeSymbol();
+        break;
       default:
         if (isLinearMeasureTool(this.tool)) {
           this.onStatus(`${this.draft.length} pts — right-click to finish`);
@@ -546,5 +556,20 @@ export class StrategistController {
     const pf = serializeFeature('objective', pts, name, this.geoFrame);
     this.addFeature(pf, g);
     this.onStatus(`Objective: ${name}`);
+  }
+
+  private finalizeSymbol(): void {
+    const pts = [...this.draft];
+    const affiliation = this.unitAffiliation;
+    const echelon = this.unitEchelon;
+    const name =
+      window.prompt(
+        'Unit designator:',
+        `${this.countOfType('unit') + 1} ${ECHELON_ABBR[echelon]}`
+      ) ?? ECHELON_ABBR[echelon];
+    const g = buildUnitSymbolGroup(pts[0], affiliation, echelon, name);
+    const pf = serializeFeature('unit', pts, name, this.geoFrame, { affiliation, echelon });
+    this.addFeature(pf, g);
+    this.onStatus(`Unit placed: ${name}`);
   }
 }

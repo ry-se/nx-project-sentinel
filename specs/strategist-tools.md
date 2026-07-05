@@ -113,6 +113,31 @@ than rotated `PlaneGeometry`, avoiding rotation-order math for an arbitrary XZ h
 Each finalizer (`strategist.ts`) prompts for a name via `window.prompt` (same UX as
 `focus`), defaulting to `<PREFIX>-<n>` counted per-type via `countOfType`.
 
+## Unit symbols (`unitSymbol.ts`, `strategist.ts`)
+
+A `symbol` `StratTool` drops a `PlanFeature type:'unit'` at a single picked point
+(reuses `pick()` — invariant 4, sits on the terrain surface). Affiliation
+(`friendly`/`enemy`/`neutral`) and echelon (`team`→`brigade`) are chosen via a small
+selector in the strategist toolbar (`WorldView.tsx`, defaults friendly/platoon) —
+**not** per-placement — and applied to `StrategistController.unitAffiliation`/
+`unitEchelon` (public mutable fields, same pattern as `.tool`); the `Sandbox` interface
+exposes `setUnitAffiliation`/`setUnitEchelon` (`createSandbox.ts`).
+
+`buildUnitSymbolGroup` (`unitSymbol.ts`) renders a billboarded canvas sprite: a frame in
+`AFFILIATION_COLOR[affiliation]` (fixed mapping — friendly=blue `0x2979ff`, enemy=red
+`0xe53935`, neutral=green `0x43a047`, invariant 1), echelon "ticks" (dots, count =
+`echelonTickCount(echelon)`, 1 for team through 7 for brigade — a simplified subset per
+D-Army-3(b), not full APP-6), and a short unit-designator label (e.g. "2 PL", prompted
+via `window.prompt`, defaulting to `<n> <ECHELON_ABBR>`). Sprite `renderOrder` is 1000
+(invariant 3 — above ground features).
+
+`serializeFeature('unit', [point], name, geoFrame, { affiliation, echelon })` stores both
+in `PlanFeature.metadata` (invariant 2); `rebuildFeature` reads them back via
+`readUnitMetadata`, which falls back to `friendly`/`platoon` on missing or malformed
+metadata (defensive — `metadata` is an open `Record<string, unknown>`, not a typed
+contract). Selection/rename/delete/undo work automatically via the existing todo-12
+feature-list API — a unit symbol is just another `Feature`.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

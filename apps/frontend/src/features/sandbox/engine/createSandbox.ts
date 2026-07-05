@@ -26,6 +26,7 @@ import {
 } from '3d-tiles-renderer/plugins';
 
 import { type FeatureSummary, StrategistController, type StratTool } from './strategist';
+import type { Affiliation, Echelon } from './unitSymbol';
 import { ViewshedController } from './viewshed';
 import { LabelManager } from './labels';
 import { ProjectileManager } from './projectiles';
@@ -110,6 +111,8 @@ export interface Sandbox {
   renameFeature(id: string, name: string): void;
   undoLastFeature(): void;
   selectFeature(id: string | null): void;
+  setUnitAffiliation(affiliation: Affiliation): void;
+  setUnitEchelon(echelon: Echelon): void;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -744,6 +747,12 @@ export function createSandbox(
     renameFeature: (id, name) => strategist.renameFeature(id, name),
     undoLastFeature: () => strategist.undoLast(),
     selectFeature: (id) => strategist.selectFeature(id),
+    setUnitAffiliation: (affiliation) => {
+      strategist.unitAffiliation = affiliation;
+    },
+    setUnitEchelon: (echelon) => {
+      strategist.unitEchelon = echelon;
+    },
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;

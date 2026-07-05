@@ -23,6 +23,7 @@ import {
 } from 'three';
 
 import type { GeoFrame, GeoPosition } from './geoFrame';
+import { buildUnitSymbolGroup, readUnitMetadata } from './unitSymbol';
 
 /** A JSON-safe stand-in for a Three.js `Vector3` — the shape every `PlanFeature` persists. */
 export interface LocalPoint {
@@ -40,7 +41,8 @@ export type PlanFeatureType =
   | 'phaseline'
   | 'loa'
   | 'axis'
-  | 'objective';
+  | 'objective'
+  | 'unit';
 
 /**
  * The single serializable representation every strategist plan feature flows through —
@@ -516,6 +518,10 @@ export function rebuildFeature(pf: PlanFeature, ctx: RebuildContext): Group {
       return buildAxisGroup(pts, pf.name);
     case 'objective':
       return buildObjectiveGroup(pts, pf.name);
+    case 'unit': {
+      const { affiliation, echelon } = readUnitMetadata(pf.metadata);
+      return buildUnitSymbolGroup(pts[0], affiliation, echelon, pf.name);
+    }
     default: {
       const exhaustive: never = pf.type;
       throw new Error(`rebuildFeature: unknown PlanFeature type ${exhaustive as string}`);

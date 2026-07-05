@@ -9,6 +9,7 @@ import {
 } from './engine/createSandbox';
 import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
 import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strategist';
+import type { Affiliation, Echelon } from './engine/unitSymbol';
 import type { VehicleType } from './engine/vehicles';
 import { IntelImport } from './IntelImport';
 
@@ -28,6 +29,18 @@ const TOOLS: Array<{ id: StratTool; label: string }> = [
   { id: 'loa', label: '⛔ Limit of Adv.' },
   { id: 'axis', label: '➡️ Axis of Adv.' },
   { id: 'objective', label: '🚩 Objective' },
+  { id: 'symbol', label: '⬛ Unit Symbol' },
+];
+
+const AFFILIATIONS: Affiliation[] = ['friendly', 'enemy', 'neutral'];
+const ECHELONS: Echelon[] = [
+  'team',
+  'squad',
+  'section',
+  'platoon',
+  'company',
+  'battalion',
+  'brigade',
 ];
 
 const VEHICLES: Array<{ id: VehicleType; label: string; key: string }> = [
@@ -65,6 +78,8 @@ export function WorldView() {
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [unitAffiliation, setUnitAffiliationState] = useState<Affiliation>('friendly');
+  const [unitEchelon, setUnitEchelonState] = useState<Echelon>('platoon');
 
   const features = useMemo<FeatureSummary[]>(
     () => sandboxRef.current?.listFeatures() ?? [],
@@ -137,6 +152,16 @@ export function WorldView() {
   const selectTool = useCallback((next: StratTool) => {
     setTool(next);
     sandboxRef.current?.setTool(next);
+  }, []);
+
+  const selectUnitAffiliation = useCallback((next: Affiliation) => {
+    setUnitAffiliationState(next);
+    sandboxRef.current?.setUnitAffiliation(next);
+  }, []);
+
+  const selectUnitEchelon = useCallback((next: Echelon) => {
+    setUnitEchelonState(next);
+    sandboxRef.current?.setUnitEchelon(next);
   }, []);
 
   const selectFeatureRow = useCallback((id: string) => {
@@ -243,6 +268,37 @@ export function WorldView() {
               {t.label}
             </button>
           ))}
+          <div className="divider my-0" />
+          <div className="flex flex-col gap-1 px-2 pb-1">
+            <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
+              Unit affiliation
+              <select
+                className="select select-bordered select-xs font-normal normal-case"
+                value={unitAffiliation}
+                onChange={(e) => selectUnitAffiliation(e.target.value as Affiliation)}
+              >
+                {AFFILIATIONS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
+              Unit echelon
+              <select
+                className="select select-bordered select-xs font-normal normal-case"
+                value={unitEchelon}
+                onChange={(e) => selectUnitEchelon(e.target.value as Echelon)}
+              >
+                {ECHELONS.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="divider my-0" />
           <button
             className="btn btn-ghost btn-sm justify-start font-normal"
