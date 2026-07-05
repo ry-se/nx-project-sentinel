@@ -138,6 +138,29 @@ metadata (defensive — `metadata` is an open `Record<string, unknown>`, not a t
 contract). Selection/rename/delete/undo work automatically via the existing todo-12
 feature-list API — a unit symbol is just another `Feature`.
 
+## MGRS readout (`mgrs.ts`)
+
+`toMgrs(geo, accuracy?)` (`mgrs.ts`) wraps the `mgrs` npm package's `forward([lon, lat],
+accuracy)` — no hand-rolled ellipsoidal grid math (invariant 1). Two consumers, both
+reading the SAME `geoFrame.localToGeo` output (invariant 2 — one geo source):
+
+- **HUD cursor readout**: `StrategistController` tracks `cursorGround` on every throttled
+  pointer move (not just while drafting), so `getCursorMgrs()` reflects wherever the mouse
+  currently points, toggleable via `mgrsHudEnabled` (`WorldView.tsx`'s "MGRS HUD" toggle,
+  default on). `createSandbox.ts`'s per-frame `cb.onHud(...)` appends `MGRS <ref>` under
+  `Features: <n>` when enabled and the cursor is over tile geometry.
+- **Per-feature grid ref**: `listFeatures()` (todo 12) computes an MGRS ref for
+  single-point feature types (`objective`, `unit`) from `PlanFeature.points.geo[0]`,
+  surfaced as a subtitle under the feature-list panel row. Multi-point features
+  (measurements, control measures) don't carry a single representative point, so `mgrs` is
+  `undefined` for those.
+
+**Deferred (not in this pass):** the todo's "optional" ground-grid overlay (MGRS grid
+lines drawn on a horizontal plane over the AO) needs a geo→local inverse `GeoFrame`
+doesn't have today (only `localToGeo`); the todo's own scope marks this overlay
+optional. No toggle for it exists yet — a future todo would add the inverse conversion
+first.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

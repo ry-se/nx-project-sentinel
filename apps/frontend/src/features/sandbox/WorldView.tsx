@@ -80,6 +80,7 @@ export function WorldView() {
   const [renameDraft, setRenameDraft] = useState('');
   const [unitAffiliation, setUnitAffiliationState] = useState<Affiliation>('friendly');
   const [unitEchelon, setUnitEchelonState] = useState<Echelon>('platoon');
+  const [mgrsHudOn, setMgrsHudOn] = useState(true);
 
   const features = useMemo<FeatureSummary[]>(
     () => sandboxRef.current?.listFeatures() ?? [],
@@ -311,6 +312,16 @@ export function WorldView() {
             🏷 Labels {labelsOn ? '✓' : ''}
           </button>
           <button
+            className="btn btn-ghost btn-sm justify-start font-normal"
+            onClick={() => {
+              const next = !mgrsHudOn;
+              setMgrsHudOn(next);
+              sandboxRef.current?.setMgrsHudEnabled(next);
+            }}
+          >
+            🗺 MGRS HUD {mgrsHudOn ? '✓' : ''}
+          </button>
+          <button
             className="btn btn-ghost btn-sm justify-start font-normal text-red-500 hover:bg-red-50"
             onClick={() => sandboxRef.current?.clearAll()}
           >
@@ -360,13 +371,18 @@ export function WorldView() {
                 />
               ) : (
                 <button
-                  className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                  className="btn btn-ghost btn-xs flex-1 flex-col items-start justify-start truncate font-normal"
                   onClick={() => selectFeatureRow(f.id)}
                   aria-pressed={selectedFeatureId === f.id}
-                  title={f.name}
+                  title={f.mgrs ? `${f.name} — ${f.mgrs}` : f.name}
                 >
-                  <span className="text-[10px] uppercase text-base-content/40">{f.type}</span>{' '}
-                  {f.name}
+                  <span className="truncate">
+                    <span className="text-[10px] uppercase text-base-content/40">{f.type}</span>{' '}
+                    {f.name}
+                  </span>
+                  {f.mgrs && (
+                    <span className="font-mono text-[9px] text-base-content/40">{f.mgrs}</span>
+                  )}
                 </button>
               )}
               {renamingId !== f.id && (

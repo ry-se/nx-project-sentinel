@@ -113,6 +113,7 @@ export interface Sandbox {
   selectFeature(id: string | null): void;
   setUnitAffiliation(affiliation: Affiliation): void;
   setUnitEchelon(echelon: Echelon): void;
+  setMgrsHudEnabled(enabled: boolean): void;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -670,7 +671,12 @@ export function createSandbox(
     labels.update(camera);
     renderer.render(scene, camera);
 
-    cb.onHud(mode === 'player' ? vehicles.hudText() : `Features: ${strategist.featureCount}`);
+    if (mode === 'player') {
+      cb.onHud(vehicles.hudText());
+    } else {
+      const mgrs = strategist.getCursorMgrs();
+      cb.onHud(`Features: ${strategist.featureCount}` + (mgrs ? `\nMGRS ${mgrs}` : ''));
+    }
   });
 
   cb.onMode('player');
@@ -752,6 +758,9 @@ export function createSandbox(
     },
     setUnitEchelon: (echelon) => {
       strategist.unitEchelon = echelon;
+    },
+    setMgrsHudEnabled: (enabled) => {
+      strategist.mgrsHudEnabled = enabled;
     },
     switchVehicle: (type) => {
       vehicles.switchTo(type);

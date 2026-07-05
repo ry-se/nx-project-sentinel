@@ -12,6 +12,7 @@ import {
 } from 'three';
 
 import type { GeoFrame } from './geoFrame';
+import { toMgrs } from './mgrs';
 import {
   buildArcGroup,
   buildAxisGroup,
@@ -79,7 +80,12 @@ export interface FeatureSummary {
   id: string;
   name: string;
   type: PlanFeatureType;
+  /** MGRS grid ref of the feature's first point — only for single-point types
+   * (objective, unit); undefined for multi-point measures/control measures (todo 15). */
+  mgrs?: string;
 }
+
+const POINT_FEATURE_TYPES: PlanFeatureType[] = ['objective', 'unit'];
 
 interface Feature {
   id: string;
@@ -100,6 +106,8 @@ export class StrategistController {
    * UI's selector, not per-placement (todo 14). */
   public unitAffiliation: Affiliation = 'friendly';
   public unitEchelon: Echelon = 'platoon';
+  /** Toggles the MGRS cursor readout in the strategist HUD (todo 15). */
+  public mgrsHudEnabled = true;
 
   private camera: PerspectiveCamera;
   private canvas: HTMLCanvasElement;
@@ -108,6 +116,7 @@ export class StrategistController {
   private raycaster = new Raycaster();
   private draft: Vector3[] = [];
   private hover: Vector3 | null = null;
+  private cursorGround: Vector3 | null = null;
   private features: Feature[] = [];
   private featureRoot = new Group();
   private previewRoot = new Group();
@@ -191,11 +200,19 @@ export class StrategistController {
   // ---------- feature list (todo 12: list/edit/delete/undo/select) ----------
 
   public listFeatures(): FeatureSummary[] {
-    return this.features.map((f) => ({
-      id: f.id,
-      name: f.planFeature.name,
-      type: f.planFeature.type,
-    }));
+    return this.features.map((f) => {
+      const geo = f.planFeature.points.geo[0];
+      const mgrs =
+        POINT_FEATURE_TYPES.includes(f.planFeature.type) && geo ? toMgrs(geo) : undefined;
+      return { id: f.id, name: f.planFeature.name, type: f.planFeature.type, mgrs };
+    });
+  }
+
+  /** The strategist HUD's live MGRS readout for wherever the mouse currently points on
+   * the terrain — `null` when disabled or the cursor isn't over any tile geometry. */
+  public getCursorMgrs(): string | null {
+    if (!this.mgrsHudEnabled || !this.cursorGround) return null;
+    return toMgrs(this.geoFrame.localToGeo(this.cursorGround));
   }
 
   public removeFeature(id: string): void {
@@ -292,11 +309,16 @@ export class StrategistController {
       return;
     }
 
-    // hover preview while drafting (throttled — raycasts against the tileset)
-    if (this.draft.length > 0 && performance.now() - this.lastPreviewAt > 33) {
+    // throttled — raycasts against the tileset. Always tracks the MGRS cursor readout
+    // (todo 15); only feeds the draft preview when a draft is actually in progress.
+    if (performance.now() - this.lastPreviewAt > 33) {
       this.lastPreviewAt = performance.now();
-      this.hover = this.pick(e);
-      this.updatePreview();
+      const hit = this.pick(e);
+      this.cursorGround = hit;
+      if (this.draft.length > 0) {
+        this.hover = hit;
+        this.updatePreview();
+      }
     }
   };
 
