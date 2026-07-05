@@ -56,6 +56,8 @@ import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strate
 import type { Affiliation, Echelon } from './engine/unitSymbol';
 import type { VehicleType } from './engine/vehicles';
 import { IntelImport } from './IntelImport';
+import { PanelRail } from './ui/PanelRail';
+import { PanelSection } from './ui/PanelSection';
 
 const KEY_STORAGE = 'google_tiles_key';
 
@@ -423,339 +425,329 @@ export function WorldView() {
         </div>
       )}
 
-      {/* Strategist toolbar */}
+      {/* Strategist left rail — Tools, Features, Plans, Brief sequence, in that order:
+          draw/measure -> see what you drew -> persist it -> sequence a briefing. Each used
+          to be an independently `fixed`-positioned panel with a hardcoded left offset;
+          Plans (`left-[28rem]`) and Brief sequence (`left-[34rem]`) genuinely overlapped
+          for 6rem because neither offset accounted for the other's rendered width. One
+          PanelRail resolves position/height via real CSS flow instead. */}
       {apiKey && !fatal && mode === 'strategist' && (
-        <div className="rounded-box fixed left-4 top-32 z-40 flex w-44 flex-col gap-1 bg-base-100 p-2 shadow-md">
-          <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-            Tools
-          </div>
-          {TOOLS.map((t) => (
-            <button
-              key={t.id}
-              className={`btn btn-sm justify-start font-normal ${
-                tool === t.id ? 'btn-primary' : 'btn-ghost'
-              }`}
-              onClick={() => selectTool(t.id)}
-            >
-              <t.Icon className="h-4 w-4" /> {t.label}
-            </button>
-          ))}
-          <div className="divider my-0" />
-          <div className="flex flex-col gap-1 px-2 pb-1">
-            <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
-              Unit affiliation
-              <select
-                className="select select-bordered select-xs font-normal normal-case"
-                value={unitAffiliation}
-                onChange={(e) => selectUnitAffiliation(e.target.value as Affiliation)}
-              >
-                {AFFILIATIONS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
-              Unit echelon
-              <select
-                className="select select-bordered select-xs font-normal normal-case"
-                value={unitEchelon}
-                onChange={(e) => selectUnitEchelon(e.target.value as Echelon)}
-              >
-                {ECHELONS.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="divider my-0" />
-          <button
-            className="btn btn-ghost btn-sm justify-start font-normal"
-            onClick={() => {
-              const next = !labelsOn;
-              setLabelsOn(next);
-              sandboxRef.current?.setLabelsVisible(next);
-            }}
-          >
-            <Tag className="h-4 w-4" /> Labels {labelsOn && <Check className="h-3 w-3" />}
-          </button>
-          <button
-            className="btn btn-ghost btn-sm justify-start font-normal"
-            onClick={() => {
-              const next = !mgrsHudOn;
-              setMgrsHudOn(next);
-              sandboxRef.current?.setMgrsHudEnabled(next);
-            }}
-          >
-            <Map className="h-4 w-4" /> MGRS HUD {mgrsHudOn && <Check className="h-3 w-3" />}
-          </button>
-          <button
-            className="btn btn-ghost btn-sm justify-start font-normal text-error hover:bg-error/10"
-            onClick={() => sandboxRef.current?.clearAll()}
-          >
-            <Trash2 className="h-4 w-4" /> Clear All
-          </button>
-        </div>
-      )}
-
-      {/* Strategist plan persistence (todo 18: save/load/delete named plans) */}
-      {apiKey && !fatal && mode === 'strategist' && (
-        <div className="rounded-box fixed left-[28rem] top-32 z-40 flex max-h-[60vh] w-56 flex-col gap-1 overflow-y-auto bg-base-100 p-2 shadow-md">
-          <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-            Plans
-          </div>
-          <label className="flex flex-col gap-0.5 px-2 text-[10px] uppercase tracking-widest text-base-content/40">
-            Classification
-            <select
-              className="select select-bordered select-xs font-normal normal-case"
-              value={classification}
-              onChange={(e) => selectClassification(e.target.value as ClassificationLevel)}
-            >
-              {CLASSIFICATION_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex gap-1 px-2">
-            <input
-              aria-label="Plan name"
-              className="input input-bordered input-xs flex-1"
-              placeholder="COY ATTACK"
-              value={planNameDraft}
-              onChange={(e) => setPlanNameDraft(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && savePlan()}
-            />
-            <button
-              className="btn btn-primary btn-xs disabled:opacity-30"
-              onClick={savePlan}
-              disabled={!planNameDraft.trim()}
-              aria-label="Save plan"
-            >
-              <Save className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          {plans.length === 0 && (
-            <div className="px-2 py-1 text-xs text-base-content/40">No saved plans yet</div>
-          )}
-          {plans.map((p) => (
-            <div key={p.id} className="flex items-center gap-1 rounded px-1 py-0.5">
+        <PanelRail side="left">
+          <PanelSection title="Tools">
+            {TOOLS.map((t) => (
               <button
-                className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
-                onClick={() => loadPlan(p.id)}
-                title={`Load "${p.name}" (${p.features.length} features)`}
+                key={t.id}
+                className={`btn btn-sm justify-start font-normal ${
+                  tool === t.id ? 'btn-primary' : 'btn-ghost'
+                }`}
+                onClick={() => selectTool(t.id)}
               >
-                {p.name}
+                <t.Icon className="h-4 w-4" /> {t.label}
               </button>
-              <button
-                className="btn btn-ghost btn-xs px-1 font-normal text-error"
-                onClick={() => deletePlan(p.id)}
-                aria-label={`Delete plan ${p.name}`}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          {/* Hand-off export (todo 23/24) — a subordinate opens the file elsewhere, no
-              live session needed. Reads the LIVE feature set, not a saved snapshot. */}
-          <div className="flex gap-1 px-2 pt-1">
-            <button
-              className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
-              onClick={() => exportPlanFile('geojson')}
-              disabled={features.length === 0}
-              aria-label="Export plan as GeoJSON"
-            >
-              Export GeoJSON
-            </button>
-            <button
-              className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
-              onClick={() => exportPlanFile('kml')}
-              disabled={features.length === 0}
-              aria-label="Export plan as KML"
-            >
-              Export KML
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Strategist brief sequence (todo 19: viewpoint bookmarks, ordered) */}
-      {apiKey && !fatal && mode === 'strategist' && (
-        <div className="rounded-box fixed left-[34rem] top-32 z-40 flex max-h-[60vh] w-56 flex-col gap-1 overflow-y-auto bg-base-100 p-2 shadow-md">
-          <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-            Brief sequence
-          </div>
-          <div className="flex gap-1 px-2">
-            <input
-              aria-label="Viewpoint name"
-              className="input input-bordered input-xs flex-1"
-              placeholder="Line of departure"
-              value={viewpointNameDraft}
-              onChange={(e) => setViewpointNameDraft(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && saveViewpoint()}
-            />
-            <button
-              className="btn btn-primary btn-xs disabled:opacity-30"
-              onClick={saveViewpoint}
-              disabled={!viewpointNameDraft.trim()}
-              aria-label="Save current view as a viewpoint"
-            >
-              <MapPin className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          {viewpoints.length === 0 && (
-            <div className="px-2 py-1 text-xs text-base-content/40">No viewpoints saved yet</div>
-          )}
-          {viewpoints.map((v, i) => (
-            <div key={v.id} className="flex items-center gap-1 rounded px-1 py-0.5">
-              <span className="text-[10px] text-base-content/40">{i + 1}</span>
-              <button
-                className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
-                onClick={() => sandboxRef.current?.restoreViewpoint(v.id)}
-                title={`Jump to "${v.name}"`}
-              >
-                {v.name}
-              </button>
-              <button
-                className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
-                onClick={() => moveViewpoint(v.id, -1)}
-                disabled={i === 0}
-                aria-label={`Move ${v.name} earlier`}
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </button>
-              <button
-                className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
-                onClick={() => moveViewpoint(v.id, 1)}
-                disabled={i === viewpoints.length - 1}
-                aria-label={`Move ${v.name} later`}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-              <button
-                className="btn btn-ghost btn-xs px-1 font-normal text-error"
-                onClick={() => sandboxRef.current?.deleteViewpoint(v.id)}
-                aria-label={`Delete viewpoint ${v.name}`}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          {viewpoints.length > 0 && (
-            <>
-              <div className="divider my-0" />
-              <div className="flex items-center justify-between px-2 pb-1">
-                <button
-                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
-                  onClick={() => sandboxRef.current?.playBriefPrevious()}
-                  disabled={briefState.currentIndex <= 0}
-                  aria-label="Previous viewpoint"
+            ))}
+            <div className="divider my-0" />
+            <div className="flex flex-col gap-1 px-2 pb-1">
+              <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
+                Unit affiliation
+                <select
+                  className="select select-bordered select-xs font-normal normal-case"
+                  value={unitAffiliation}
+                  onChange={(e) => selectUnitAffiliation(e.target.value as Affiliation)}
                 >
-                  <SkipBack className="h-3.5 w-3.5" />
+                  {AFFILIATIONS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
+                Unit echelon
+                <select
+                  className="select select-bordered select-xs font-normal normal-case"
+                  value={unitEchelon}
+                  onChange={(e) => selectUnitEchelon(e.target.value as Echelon)}
+                >
+                  {ECHELONS.map((e) => (
+                    <option key={e} value={e}>
+                      {e}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="divider my-0" />
+            <button
+              className="btn btn-ghost btn-sm justify-start font-normal"
+              onClick={() => {
+                const next = !labelsOn;
+                setLabelsOn(next);
+                sandboxRef.current?.setLabelsVisible(next);
+              }}
+            >
+              <Tag className="h-4 w-4" /> Labels {labelsOn && <Check className="h-3 w-3" />}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm justify-start font-normal"
+              onClick={() => {
+                const next = !mgrsHudOn;
+                setMgrsHudOn(next);
+                sandboxRef.current?.setMgrsHudEnabled(next);
+              }}
+            >
+              <Map className="h-4 w-4" /> MGRS HUD {mgrsHudOn && <Check className="h-3 w-3" />}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm justify-start font-normal text-error hover:bg-error/10"
+              onClick={() => sandboxRef.current?.clearAll()}
+            >
+              <Trash2 className="h-4 w-4" /> Clear All
+            </button>
+          </PanelSection>
+
+          <PanelSection
+            title={`Features (${features.length})`}
+            actions={
+              <button
+                className="btn btn-ghost btn-xs font-normal disabled:opacity-30"
+                onClick={undoLastFeature}
+                disabled={features.length === 0}
+                aria-label="Undo last placed feature"
+              >
+                <Undo2 className="h-3.5 w-3.5" /> Undo
+              </button>
+            }
+          >
+            {features.length === 0 && (
+              <div className="px-2 py-1 text-xs text-base-content/40">No features placed yet</div>
+            )}
+            {features.map((f) => (
+              <div
+                key={f.id}
+                className={`flex items-center gap-1 rounded px-1 py-0.5 ${
+                  selectedFeatureId === f.id ? 'bg-primary/10' : ''
+                }`}
+              >
+                {renamingId === f.id ? (
+                  <input
+                    autoFocus
+                    aria-label={`Rename ${f.name}`}
+                    className="input input-bordered input-xs flex-1"
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename(f.id);
+                      if (e.key === 'Escape') setRenamingId(null);
+                    }}
+                    onBlur={() => commitRename(f.id)}
+                  />
+                ) : (
+                  <button
+                    className="btn btn-ghost btn-xs flex-1 flex-col items-start justify-start truncate font-normal"
+                    onClick={() => selectFeatureRow(f.id)}
+                    aria-pressed={selectedFeatureId === f.id}
+                    title={[
+                      f.mgrs ? `${f.name} — ${f.mgrs}` : f.name,
+                      f.provenance
+                        ? `by ${f.provenance.author} at ${f.provenance.createdAt}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join('\n')}
+                  >
+                    <span className="truncate">
+                      <span className="text-[10px] uppercase text-base-content/40">{f.type}</span>{' '}
+                      {f.name}
+                    </span>
+                    {f.mgrs && (
+                      <span className="font-mono text-[9px] text-base-content/40">{f.mgrs}</span>
+                    )}
+                  </button>
+                )}
+                {renamingId !== f.id && (
+                  <>
+                    <button
+                      className="btn btn-ghost btn-xs px-1 font-normal"
+                      onClick={() => startRename(f)}
+                      aria-label={`Rename ${f.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-xs px-1 font-normal text-error"
+                      onClick={() => deleteFeature(f.id)}
+                      aria-label={`Delete ${f.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </PanelSection>
+
+          <PanelSection title="Plans">
+            <label className="flex flex-col gap-0.5 px-2 text-[10px] uppercase tracking-widest text-base-content/40">
+              Classification
+              <select
+                className="select select-bordered select-xs font-normal normal-case"
+                value={classification}
+                onChange={(e) => selectClassification(e.target.value as ClassificationLevel)}
+              >
+                {CLASSIFICATION_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex gap-1 px-2">
+              <input
+                aria-label="Plan name"
+                className="input input-bordered input-xs flex-1"
+                placeholder="COY ATTACK"
+                value={planNameDraft}
+                onChange={(e) => setPlanNameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && savePlan()}
+              />
+              <button
+                className="btn btn-primary btn-xs disabled:opacity-30"
+                onClick={savePlan}
+                disabled={!planNameDraft.trim()}
+                aria-label="Save plan"
+              >
+                <Save className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {plans.length === 0 && (
+              <div className="px-2 py-1 text-xs text-base-content/40">No saved plans yet</div>
+            )}
+            {plans.map((p) => (
+              <div key={p.id} className="flex items-center gap-1 rounded px-1 py-0.5">
+                <button
+                  className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                  onClick={() => loadPlan(p.id)}
+                  title={`Load "${p.name}" (${p.features.length} features)`}
+                >
+                  {p.name}
                 </button>
-                <span className="text-[10px] text-base-content/60">
-                  {briefState.currentIndex + 1} / {viewpoints.length}
-                  {briefState.isPlaying ? ' ▶' : ''}
-                </span>
                 <button
-                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
-                  onClick={() => sandboxRef.current?.playBriefNext()}
-                  disabled={briefState.currentIndex >= viewpoints.length - 1}
-                  aria-label="Next viewpoint"
+                  className="btn btn-ghost btn-xs px-1 font-normal text-error"
+                  onClick={() => deletePlan(p.id)}
+                  aria-label={`Delete plan ${p.name}`}
                 >
-                  <SkipForward className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Strategist feature list (todo 12: list/select/rename/delete/undo) */}
-      {apiKey && !fatal && mode === 'strategist' && (
-        <div className="rounded-box fixed left-52 top-32 z-40 flex max-h-[60vh] w-56 flex-col gap-1 overflow-y-auto bg-base-100 p-2 shadow-md">
-          <div className="flex items-center justify-between px-2 pt-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-              Features ({features.length})
-            </span>
-            <button
-              className="btn btn-ghost btn-xs font-normal disabled:opacity-30"
-              onClick={undoLastFeature}
-              disabled={features.length === 0}
-              aria-label="Undo last placed feature"
-            >
-              <Undo2 className="h-3.5 w-3.5" /> Undo
-            </button>
-          </div>
-          {features.length === 0 && (
-            <div className="px-2 py-1 text-xs text-base-content/40">No features placed yet</div>
-          )}
-          {features.map((f) => (
-            <div
-              key={f.id}
-              className={`flex items-center gap-1 rounded px-1 py-0.5 ${
-                selectedFeatureId === f.id ? 'bg-primary/10' : ''
-              }`}
-            >
-              {renamingId === f.id ? (
-                <input
-                  autoFocus
-                  aria-label={`Rename ${f.name}`}
-                  className="input input-bordered input-xs flex-1"
-                  value={renameDraft}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename(f.id);
-                    if (e.key === 'Escape') setRenamingId(null);
-                  }}
-                  onBlur={() => commitRename(f.id)}
-                />
-              ) : (
-                <button
-                  className="btn btn-ghost btn-xs flex-1 flex-col items-start justify-start truncate font-normal"
-                  onClick={() => selectFeatureRow(f.id)}
-                  aria-pressed={selectedFeatureId === f.id}
-                  title={[
-                    f.mgrs ? `${f.name} — ${f.mgrs}` : f.name,
-                    f.provenance ? `by ${f.provenance.author} at ${f.provenance.createdAt}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join('\n')}
-                >
-                  <span className="truncate">
-                    <span className="text-[10px] uppercase text-base-content/40">{f.type}</span>{' '}
-                    {f.name}
-                  </span>
-                  {f.mgrs && (
-                    <span className="font-mono text-[9px] text-base-content/40">{f.mgrs}</span>
-                  )}
-                </button>
-              )}
-              {renamingId !== f.id && (
-                <>
-                  <button
-                    className="btn btn-ghost btn-xs px-1 font-normal"
-                    onClick={() => startRename(f)}
-                    aria-label={`Rename ${f.name}`}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-xs px-1 font-normal text-error"
-                    onClick={() => deleteFeature(f.id)}
-                    aria-label={`Delete ${f.name}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </>
-              )}
+            ))}
+            {/* Hand-off export (todo 23/24) — a subordinate opens the file elsewhere, no
+                live session needed. Reads the LIVE feature set, not a saved snapshot. */}
+            <div className="flex gap-1 px-2 pt-1">
+              <button
+                className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
+                onClick={() => exportPlanFile('geojson')}
+                disabled={features.length === 0}
+                aria-label="Export plan as GeoJSON"
+              >
+                Export GeoJSON
+              </button>
+              <button
+                className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
+                onClick={() => exportPlanFile('kml')}
+                disabled={features.length === 0}
+                aria-label="Export plan as KML"
+              >
+                Export KML
+              </button>
             </div>
-          ))}
-        </div>
+          </PanelSection>
+
+          <PanelSection title="Brief sequence">
+            <div className="flex gap-1 px-2">
+              <input
+                aria-label="Viewpoint name"
+                className="input input-bordered input-xs flex-1"
+                placeholder="Line of departure"
+                value={viewpointNameDraft}
+                onChange={(e) => setViewpointNameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveViewpoint()}
+              />
+              <button
+                className="btn btn-primary btn-xs disabled:opacity-30"
+                onClick={saveViewpoint}
+                disabled={!viewpointNameDraft.trim()}
+                aria-label="Save current view as a viewpoint"
+              >
+                <MapPin className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {viewpoints.length === 0 && (
+              <div className="px-2 py-1 text-xs text-base-content/40">No viewpoints saved yet</div>
+            )}
+            {viewpoints.map((v, i) => (
+              <div key={v.id} className="flex items-center gap-1 rounded px-1 py-0.5">
+                <span className="text-[10px] text-base-content/40">{i + 1}</span>
+                <button
+                  className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                  onClick={() => sandboxRef.current?.restoreViewpoint(v.id)}
+                  title={`Jump to "${v.name}"`}
+                >
+                  {v.name}
+                </button>
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                  onClick={() => moveViewpoint(v.id, -1)}
+                  disabled={i === 0}
+                  aria-label={`Move ${v.name} earlier`}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                  onClick={() => moveViewpoint(v.id, 1)}
+                  disabled={i === viewpoints.length - 1}
+                  aria-label={`Move ${v.name} later`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal text-error"
+                  onClick={() => sandboxRef.current?.deleteViewpoint(v.id)}
+                  aria-label={`Delete viewpoint ${v.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {viewpoints.length > 0 && (
+              <>
+                <div className="divider my-0" />
+                <div className="flex items-center justify-between px-2 pb-1">
+                  <button
+                    className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                    onClick={() => sandboxRef.current?.playBriefPrevious()}
+                    disabled={briefState.currentIndex <= 0}
+                    aria-label="Previous viewpoint"
+                  >
+                    <SkipBack className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-[10px] text-base-content/60">
+                    {briefState.currentIndex + 1} / {viewpoints.length}
+                    {briefState.isPlaying ? ' ▶' : ''}
+                  </span>
+                  <button
+                    className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                    onClick={() => sandboxRef.current?.playBriefNext()}
+                    disabled={briefState.currentIndex >= viewpoints.length - 1}
+                    aria-label="Next viewpoint"
+                  >
+                    <SkipForward className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </>
+            )}
+          </PanelSection>
+        </PanelRail>
       )}
 
       {/* Player vehicle switcher */}
