@@ -178,6 +178,33 @@ the `AXIS <name>` text). All three now take a `geoFrame: GeoFrame` param — `Re
 (the `rebuildFeature` seam) correspondingly carries `geoFrame` so a reloaded feature's
 bearing label matches what was drawn (round-trip invariant, todo 11).
 
+## Plan persistence (`planStore.ts`)
+
+Browser `localStorage`-backed save/load of named plans (D-Army-4(a) — async-share
+training-lane scope; no backend session state needed today). The store ONLY ever handles
+`PlanFeature[]` data (invariant 1) — it has no idea what a Three.js `Group` is, and no
+per-type knowledge of what any `PlanFeature.type` renders as (invariant 2, mirrors
+`rebuildFeature`'s own contract).
+
+- `Plan`: `{ id, name, version, anchor, createdAt, updatedAt, features: PlanFeature[] }`.
+  `version` is `PLAN_SCHEMA_VERSION` (currently `1`) — `loadPlan` throws
+  `UnknownPlanSchemaVersionError` on a mismatch rather than silently misreading an
+  incompatible format (invariant 3).
+- `savePlan(name, features, anchor, now)` — saving under a name that already exists
+  UPDATES that plan (same `id`, `createdAt` preserved, `updatedAt` bumped to `now`) rather
+  than creating a duplicate (invariant 4, matched by finding the existing entry with that
+  `name` across every stored plan).
+- `loadPlan(id)`, `listPlans()` (most-recently-updated first), `deletePlan(id)`.
+- Every function takes `now` as an explicit string argument rather than reading
+  `Date.now()`/`new Date()` internally — the store stays deterministically testable
+  (invariant 5); jsdom's real (in-memory) `localStorage` is enough for tests, no custom
+  shim needed.
+
+**Out of this todo's scope** (the wire todo lands it): the save/load/delete UI, the plan
+picker, and pulling the LIVE feature set out of a running `StrategistController` (today
+`listFeatures()` returns only `FeatureSummary` rows for the panel — a future controller
+method exposing the full `PlanFeature[]` is the wire todo's job).
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:
