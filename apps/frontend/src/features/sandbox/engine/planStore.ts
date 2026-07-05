@@ -1,3 +1,4 @@
+import { type ClassificationLevel, DEFAULT_CLASSIFICATION } from './classification';
 import type { PlanFeature } from './planFeature';
 import type { Viewpoint } from './viewpoint';
 
@@ -15,6 +16,8 @@ export interface Plan {
   features: PlanFeature[];
   /** The brief sequence (todo 19) — persists/exports with the plan (invariant 2). */
   viewpoints: Viewpoint[];
+  /** Defaults to EXERCISE (todo 22 invariant 2) — never silently blank. */
+  classification: ClassificationLevel;
 }
 
 export class UnknownPlanSchemaVersionError extends Error {
@@ -56,7 +59,8 @@ export function savePlan(
   features: PlanFeature[],
   anchor: { lat: number; lon: number },
   now: string,
-  viewpoints: Viewpoint[] = []
+  viewpoints: Viewpoint[] = [],
+  classification: ClassificationLevel = DEFAULT_CLASSIFICATION
 ): Plan {
   const existing = readAllPlans().find((p) => p.name === name);
   const plan: Plan = {
@@ -68,6 +72,7 @@ export function savePlan(
     updatedAt: now,
     features,
     viewpoints,
+    classification,
   };
   localStorage.setItem(storageKey(plan.id), JSON.stringify(plan));
   return plan;

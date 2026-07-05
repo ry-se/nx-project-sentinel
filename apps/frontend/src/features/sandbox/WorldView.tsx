@@ -7,6 +7,12 @@ import {
   type Sandbox,
   type SandboxMode,
 } from './engine/createSandbox';
+import {
+  CLASSIFICATION_COLOR,
+  CLASSIFICATION_LEVELS,
+  type ClassificationLevel,
+  DEFAULT_CLASSIFICATION,
+} from './engine/classification';
 import type { Plan } from './engine/planStore';
 import type { Viewpoint } from './engine/viewpoint';
 import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
@@ -86,6 +92,8 @@ export function WorldView() {
   const [mgrsHudOn, setMgrsHudOn] = useState(true);
   const [planVersion, setPlanVersion] = useState(0);
   const [planNameDraft, setPlanNameDraft] = useState('');
+  const [classification, setClassificationState] =
+    useState<ClassificationLevel>(DEFAULT_CLASSIFICATION);
   const [viewpointVersion, setViewpointVersion] = useState(0);
   const [viewpointNameDraft, setViewpointNameDraft] = useState('');
 
@@ -232,6 +240,13 @@ export function WorldView() {
     sandboxRef.current?.loadPlan(id);
     setSelectedFeatureId(null);
     setFeatureVersion((v) => v + 1);
+    const sb = sandboxRef.current;
+    if (sb) setClassificationState(sb.getClassification());
+  }, []);
+
+  const selectClassification = useCallback((level: ClassificationLevel) => {
+    setClassificationState(level);
+    sandboxRef.current?.setClassification(level);
   }, []);
 
   const deletePlan = useCallback((id: string) => {
@@ -308,6 +323,26 @@ export function WorldView() {
   return (
     <div className="fixed inset-0">
       <canvas ref={canvasRef} className="block h-full w-full touch-none" />
+
+      {/* Classification banner (todo 22 invariant 1) — persistent top + bottom, standard
+          military marking placement, always visible in strategist mode so a plan is never
+          silently unclassified (invariant 2 — default EXERCISE). */}
+      {apiKey && !fatal && mode === 'strategist' && (
+        <>
+          <div
+            className="fixed inset-x-0 top-0 z-50 py-0.5 text-center text-xs font-bold tracking-widest text-white"
+            style={{ backgroundColor: CLASSIFICATION_COLOR[classification] }}
+          >
+            {classification}
+          </div>
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 py-0.5 text-center text-xs font-bold tracking-widest text-white"
+            style={{ backgroundColor: CLASSIFICATION_COLOR[classification] }}
+          >
+            {classification}
+          </div>
+        </>
+      )}
 
       {/* Mode badge */}
       {apiKey && !fatal && (
@@ -421,6 +456,20 @@ export function WorldView() {
           <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
             Plans
           </div>
+          <label className="flex flex-col gap-0.5 px-2 text-[10px] uppercase tracking-widest text-base-content/40">
+            Classification
+            <select
+              className="select select-bordered select-xs font-normal normal-case"
+              value={classification}
+              onChange={(e) => selectClassification(e.target.value as ClassificationLevel)}
+            >
+              {CLASSIFICATION_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="flex gap-1 px-2">
             <input
               aria-label="Plan name"
@@ -599,7 +648,12 @@ export function WorldView() {
                   className="btn btn-ghost btn-xs flex-1 flex-col items-start justify-start truncate font-normal"
                   onClick={() => selectFeatureRow(f.id)}
                   aria-pressed={selectedFeatureId === f.id}
-                  title={f.mgrs ? `${f.name} — ${f.mgrs}` : f.name}
+                  title={[
+                    f.mgrs ? `${f.name} — ${f.mgrs}` : f.name,
+                    f.provenance ? `by ${f.provenance.author} at ${f.provenance.createdAt}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
                 >
                   <span className="truncate">
                     <span className="text-[10px] uppercase text-base-content/40">{f.type}</span>{' '}

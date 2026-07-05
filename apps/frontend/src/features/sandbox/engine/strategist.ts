@@ -39,6 +39,11 @@ import type { ViewshedController } from './viewshed';
 import { BriefPlaybackStepper } from './briefPlayback';
 import { GroundWalkController, type MoveDirection } from './groundWalk';
 import { restoreViewpointPose, type Viewpoint } from './viewpoint';
+import {
+  type ClassificationLevel,
+  DEFAULT_CLASSIFICATION,
+  type Provenance,
+} from './classification';
 
 export type StratTool =
   | 'select'
@@ -105,6 +110,8 @@ export interface FeatureSummary {
   /** MGRS grid ref of the feature's first point — only for single-point types
    * (objective, unit); undefined for multi-point measures/control measures (todo 15). */
   mgrs?: string;
+  /** Author + timestamps captured at draw time (todo 22 invariant 3). */
+  provenance?: Provenance;
 }
 
 const POINT_FEATURE_TYPES: PlanFeatureType[] = ['objective', 'unit'];
@@ -136,6 +143,11 @@ export class StrategistController {
   public unitEchelon: Echelon = 'platoon';
   /** Toggles the MGRS cursor readout in the strategist HUD (todo 15). */
   public mgrsHudEnabled = true;
+  /** Author name stamped into each feature's provenance at draw time — a simple settable
+   * name, not an auth system (todo 22). */
+  public operatorName = 'Operator';
+  /** The current plan's classification — defaults to EXERCISE (invariant 2), never blank. */
+  public currentClassification: ClassificationLevel = DEFAULT_CLASSIFICATION;
   public onViewpointsChanged: () => void = () => {
     /* Custom Hook */
   };
@@ -272,7 +284,8 @@ export class StrategistController {
       const geo = f.planFeature.points.geo[0];
       const mgrs =
         POINT_FEATURE_TYPES.includes(f.planFeature.type) && geo ? toMgrs(geo) : undefined;
-      return { id: f.id, name: f.planFeature.name, type: f.planFeature.type, mgrs };
+      const provenance = f.planFeature.metadata.provenance as Provenance | undefined;
+      return { id: f.id, name: f.planFeature.name, type: f.planFeature.type, mgrs, provenance };
     });
   }
 
@@ -697,12 +710,20 @@ export class StrategistController {
     return this.features.filter((f) => f.planFeature.type === type).length;
   }
 
+  /** Stamps provenance at draw time (invariant 3) — captured once, immutable afterward
+   * (rename/etc. do not re-stamp `updatedAt`; that's the `Plan`-level concern `planStore.ts`
+   * already owns). */
+  private provenanceMetadata(): { provenance: Provenance } {
+    const now = new Date().toISOString();
+    return { provenance: { author: this.operatorName, createdAt: now, updatedAt: now } };
+  }
+
   private finalizeDistance(): void {
     const pts = [...this.draft];
     const total = pathLength(pts);
     const g = buildDistanceGroup(pts, this.geoFrame);
     const name = `Distance ${this.countOfType('distance') + 1}`;
-    const pf = serializeFeature('distance', pts, name, this.geoFrame);
+    const pf = serializeFeature('distance', pts, name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, g);
     this.onStatus(`Distance: ${fmtDist(total)}`);
   }
@@ -713,7 +734,7 @@ export class StrategistController {
       window.prompt('Name this focus area:', `AO-${this.countOfType('focus') + 1}`) ?? 'AO';
     const g = buildFocusGroup(pts, name);
     const areaM2 = shoelaceXZ(pts);
-    const pf = serializeFeature('focus', pts, name, this.geoFrame);
+    const pf = serializeFeature('focus', pts, name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, g);
     this.onStatus(`${name}: ${fmtArea(areaM2)}`);
   }
@@ -724,7 +745,7 @@ export class StrategistController {
     const r = Math.hypot(radiusPt.x - center.x, radiusPt.z - center.z);
     const g = buildArcGroup(pts);
     const name = `Fire Arc ${this.countOfType('arc') + 1}`;
-    const pf = serializeFeature('arc', pts, name, this.geoFrame);
+    const pf = serializeFeature('arc', pts, name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, g);
     this.onStatus(`Fire arc: radius ${fmtDist(r)}`);
   }
@@ -733,7 +754,7 @@ export class StrategistController {
     const [obs, tgt] = this.draft;
     const result = buildLosGroup(obs, tgt, true, this.raycaster, this.tiles, this.geoFrame);
     const name = `LOS ${this.countOfType('los') + 1}`;
-    const pf = serializeFeature('los', [obs, tgt], name, this.geoFrame);
+    const pf = serializeFeature('los', [obs, tgt], name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, result.group);
     this.onStatus(
       result.blocked
@@ -748,7 +769,7 @@ export class StrategistController {
     const name =
       window.prompt(`Name this ${prefix}:`, `${prefix}-${this.countOfType(type) + 1}`) ?? prefix;
     const g = buildLinearMeasureGroup(pts, type, name);
-    const pf = serializeFeature(type, pts, name, this.geoFrame);
+    const pf = serializeFeature(type, pts, name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, g);
     this.onStatus(`${name}: ${pts.length} pts, ${fmtDist(pathLength(pts))}`);
   }
@@ -758,7 +779,7 @@ export class StrategistController {
     const name =
       window.prompt('Name this axis of advance:', `AXIS-${this.countOfType('axis') + 1}`) ?? 'AXIS';
     const g = buildAxisGroup(pts, name, this.geoFrame);
-    const pf = serializeFeature('axis', pts, name, this.geoFrame);
+    const pf = serializeFeature('axis', pts, name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, g);
     this.onStatus(`AXIS ${name}: ${fmtDist(pathLength(pts))}`);
   }
@@ -768,7 +789,7 @@ export class StrategistController {
     const name =
       window.prompt('Name this objective:', `OBJ-${this.countOfType('objective') + 1}`) ?? 'OBJ';
     const g = buildObjectiveGroup(pts, name);
-    const pf = serializeFeature('objective', pts, name, this.geoFrame);
+    const pf = serializeFeature('objective', pts, name, this.geoFrame, this.provenanceMetadata());
     this.addFeature(pf, g);
     this.onStatus(`Objective: ${name}`);
   }
@@ -783,7 +804,11 @@ export class StrategistController {
         `${this.countOfType('unit') + 1} ${ECHELON_ABBR[echelon]}`
       ) ?? ECHELON_ABBR[echelon];
     const g = buildUnitSymbolGroup(pts[0], affiliation, echelon, name);
-    const pf = serializeFeature('unit', pts, name, this.geoFrame, { affiliation, echelon });
+    const pf = serializeFeature('unit', pts, name, this.geoFrame, {
+      affiliation,
+      echelon,
+      ...this.provenanceMetadata(),
+    });
     this.addFeature(pf, g);
     this.onStatus(`Unit placed: ${name}`);
   }

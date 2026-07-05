@@ -36,6 +36,7 @@ import {
 } from './planStore';
 import { ViewshedController } from './viewshed';
 import type { Viewpoint } from './viewpoint';
+import type { ClassificationLevel } from './classification';
 import { LabelManager } from './labels';
 import { ProjectileManager } from './projectiles';
 import { VehicleManager, type VehicleType } from './vehicles';
@@ -141,6 +142,9 @@ export interface Sandbox {
   getBriefPlaybackState(): { currentIndex: number; isPlaying: boolean };
   exitGroundWalk(): void;
   isGroundWalkActive(): boolean;
+  setClassification(level: ClassificationLevel): void;
+  getClassification(): ClassificationLevel;
+  setOperatorName(name: string): void;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -798,12 +802,21 @@ export function createSandbox(
         strategist.exportFeatures(),
         anchor,
         new Date().toISOString(),
-        strategist.exportViewpoints()
+        strategist.exportViewpoints(),
+        strategist.currentClassification
       ),
     loadPlan: (id) => {
       const plan = loadPlanFromStore(id);
       strategist.loadPlan(plan.features);
       strategist.loadViewpoints(plan.viewpoints);
+      strategist.currentClassification = plan.classification;
+    },
+    setClassification: (level) => {
+      strategist.currentClassification = level;
+    },
+    getClassification: () => strategist.currentClassification,
+    setOperatorName: (name) => {
+      strategist.operatorName = name;
     },
     listPlans: () => listPlansFromStore(),
     deletePlan: (id) => deletePlanFromStore(id),

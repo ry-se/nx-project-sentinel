@@ -327,6 +327,54 @@ callback so a host UI's tool-highlight state stays in sync even when the tool ch
 from something OTHER than a direct `Sandbox.setTool` call (e.g. this Escape-triggered
 exit).
 
+## Classification + provenance (`classification.ts`, `strategist.ts`, `planStore.ts`)
+
+A persistent classification banner and per-feature authorship record, so a briefing is
+never shown without its handling caveat and every drawn feature carries who drew it and
+when — training-lane scope (viability Gate 6 — no real classified data handling; real
+accreditation/handling-caveat enforcement is an environment gate, not code).
+
+- `ClassificationLevel` (`classification.ts:4`): `'EXERCISE' | 'UNCLASSIFIED' |
+'RESTRICTED' | 'CONFIDENTIAL'`. `CLASSIFICATION_LEVELS` is the ordered config array
+  driving both the `<select>` picker and any future validation (invariant 4 — never a
+  hardcoded literal per call site). `DEFAULT_CLASSIFICATION` is `'EXERCISE'` — a fresh
+  controller and a `Plan` saved without an explicit level both resolve to this, never a
+  blank/undefined level (invariant 2).
+- `CLASSIFICATION_COLOR` (`classification.ts:18`) maps each level to a distinct banner
+  background color (blue/green/amber/red), legible against white banner text.
+- `Provenance` (`classification.ts:27`): `{ author, createdAt, updatedAt }`. Captured
+  ONCE, at draw time, via `StrategistController.provenanceMetadata()`
+  (`strategist.ts:716-718`), which stamps `author` from `this.operatorName` (defaults to
+  `'Operator'`, `strategist.ts:148`) and both timestamps from `new Date().toISOString()`
+  at the SAME instant — `createdAt === updatedAt` on every freshly-drawn feature
+  (invariant 3). Every finalizer (`finalizeDistance`, `finalizeFocus`, `finalizeArc`,
+  `finalizeLos`, `finalizeLinearMeasure`, `finalizeAxis`, `finalizeObjective`,
+  `finalizeSymbol`) passes `provenanceMetadata()` into `serializeFeature(...)`, so
+  provenance is universal across every feature type, not opt-in per tool. Provenance is
+  set-once: `renameFeature` (`strategist.ts:412-417`) replaces only `name`, never touches
+  `metadata.provenance` — there is no edit-tracking beyond the original draw today.
+- `StrategistController.currentClassification` (`strategist.ts:150`) holds the live
+  session's level, defaulting to `DEFAULT_CLASSIFICATION`. `FeatureSummary.provenance`
+  (`strategist.ts:114`, populated `strategist.ts:287`) surfaces each feature's
+  provenance through `listFeatures()` for the feature-list panel's row tooltip.
+- `Plan.classification` (`planStore.ts:20`) persists the session's level alongside
+  `features`/`viewpoints`; `savePlan(..., classification = DEFAULT_CLASSIFICATION)`
+  defaults it when the caller omits it (mirrors the `viewpoints = []` default pattern),
+  so an old caller that doesn't pass a level still gets a well-defined EXERCISE plan
+  rather than `undefined`.
+- `Sandbox.setClassification`/`getClassification` (`createSandbox.ts:145-146`,
+  wired `createSandbox.ts:814-817`) read/write `strategist.currentClassification`
+  directly — no separate copy of the level exists between the controller and the
+  Sandbox facade. `savePlan`/`loadPlan` (`createSandbox.ts:806,812`) thread the level
+  through the same save/load round-trip as features and viewpoints.
+- `WorldView.tsx` renders a persistent classification banner (`WorldView.tsx:327-343`) —
+  fixed top AND bottom bars, always visible in strategist mode, colored via
+  `CLASSIFICATION_COLOR` — plus a `<select>` picker (`WorldView.tsx:460-466`, bound to
+  `CLASSIFICATION_LEVELS`) inside the Plans panel. Selecting a level calls
+  `selectClassification` (`WorldView.tsx:247-249`), which updates local state AND calls
+  `sandbox.setClassification` so the two stay in sync; `loadPlan` similarly re-syncs
+  local state from `sandbox.getClassification()` (`WorldView.tsx:244`) after a load.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:
