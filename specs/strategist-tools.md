@@ -91,6 +91,28 @@ delete button (🗑) per row, and an "Undo" button for the whole list. The panel
 on `onFeaturesChanged` AND on entering strategist mode (so a session that already has
 features when the panel first mounts isn't shown stale).
 
+## Control measures (`planFeature.ts`, `strategist.ts`)
+
+Five more `PlanFeatureType`s beyond the 4 measurement tools, each a distinct type (not
+lumped) so phasing/export can treat them individually. Drafting reuses the existing
+click-to-place / right-click-to-finish polyline pattern (boundary/phaseline/loa/axis) or
+a single click (objective) — no parallel input system.
+
+| Tool          | Points   | Style                                                                                                            | Builder (`planFeature.ts`) |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| **boundary**  | polyline | white solid line                                                                                                 | `buildLinearMeasureGroup`  |
+| **phaseline** | polyline | yellow dashed line                                                                                               | `buildLinearMeasureGroup`  |
+| **loa**       | polyline | orange dashed line ("limit of advance")                                                                          | `buildLinearMeasureGroup`  |
+| **axis**      | polyline | centerline + arrowhead at the last point + translucent width corridor (one flat quad per segment, half-width 8m) | `buildAxisGroup`           |
+| **objective** | 1 click  | a marker + bold "OBJ \<name\>" label (point only — an area variant is a later-wave refinement)                   | `buildObjectiveGroup`      |
+
+`boundary`/`phaseline`/`loa` share one builder keyed by `LinearMeasureType`, distinguished
+by `LINEAR_MEASURE_STYLE` (color + dashed flag). The axis corridor band and arrowhead are
+built from explicit world-space triangles (`buildBandSegment`/`buildArrowhead`) rather
+than rotated `PlaneGeometry`, avoiding rotation-order math for an arbitrary XZ heading.
+Each finalizer (`strategist.ts`) prompts for a name via `window.prompt` (same UX as
+`focus`), defaulting to `<PREFIX>-<n>` counted per-type via `countOfType`.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

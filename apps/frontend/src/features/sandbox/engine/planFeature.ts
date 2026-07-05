@@ -1,4 +1,5 @@
 import {
+  BufferAttribute,
   BufferGeometry,
   CanvasTexture,
   DoubleSide,
@@ -7,6 +8,7 @@ import {
   Group,
   Line,
   LineBasicMaterial,
+  LineDashedMaterial,
   LineSegments,
   Mesh,
   MeshBasicMaterial,
@@ -29,7 +31,16 @@ export interface LocalPoint {
   z: number;
 }
 
-export type PlanFeatureType = 'distance' | 'focus' | 'arc' | 'los';
+export type PlanFeatureType =
+  | 'distance'
+  | 'focus'
+  | 'arc'
+  | 'los'
+  | 'boundary'
+  | 'phaseline'
+  | 'loa'
+  | 'axis'
+  | 'objective';
 
 /**
  * The single serializable representation every strategist plan feature flows through —
@@ -225,6 +236,161 @@ export function buildArcGroup(pts: Vector3[]): Group {
   return g;
 }
 
+// ---------- control measures (todo 13) ----------
+
+export type LinearMeasureType = 'boundary' | 'phaseline' | 'loa';
+
+const LINEAR_MEASURE_STYLE: Record<LinearMeasureType, { color: number; dashed: boolean }> = {
+  boundary: { color: 0xffffff, dashed: false },
+  phaseline: { color: 0xffd54f, dashed: true },
+  loa: { color: 0xff7043, dashed: true },
+};
+
+/** Boundary / phase line / limit-of-advance — a distinct color + dash pattern per type,
+ * named at draw time (the label IS the name, unlike the anonymous measurement tools). */
+export function buildLinearMeasureGroup(
+  pts: Vector3[],
+  type: LinearMeasureType,
+  name: string
+): Group {
+  const { color, dashed } = LINEAR_MEASURE_STYLE[type];
+  const geometry = new BufferGeometry().setFromPoints(pts);
+  const material = dashed
+    ? new LineDashedMaterial({
+        color,
+        dashSize: 8,
+        gapSize: 5,
+        depthTest: false,
+        transparent: true,
+      })
+    : new LineBasicMaterial({ color, depthTest: false, transparent: true });
+  const line = new Line(geometry, material);
+  if (dashed) line.computeLineDistances();
+  line.renderOrder = 999;
+
+  const g = new Group();
+  g.add(line);
+  for (const p of pts) g.add(marker(p, color, 1.5));
+  g.add(label(pts[pts.length - 1].clone().add(new Vector3(0, 12, 0)), name));
+  return g;
+}
+
+/** A flat translucent quad spanning `a`→`b`, offset perpendicular in the XZ plane by
+ * `halfWidth` — built from explicit world-space triangles (not a rotated PlaneGeometry) so
+ * there's no rotation-order math to get wrong for an arbitrary XZ heading. */
+function buildBandSegment(a: Vector3, b: Vector3, halfWidth: number, color: number): Mesh | null {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return null;
+  const px = (-dz / len) * halfWidth;
+  const pz = (dx / len) * halfWidth;
+  const y = (a.y + b.y) / 2 + 0.4;
+
+  const positions = new Float32Array([
+    a.x + px,
+    y,
+    a.z + pz,
+    a.x - px,
+    y,
+    a.z - pz,
+    b.x - px,
+    y,
+    b.z - pz,
+    a.x + px,
+    y,
+    a.z + pz,
+    b.x - px,
+    y,
+    b.z - pz,
+    b.x + px,
+    y,
+    b.z + pz,
+  ]);
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  return new Mesh(
+    geo,
+    new MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.16,
+      side: DoubleSide,
+      depthWrite: false,
+    })
+  );
+}
+
+/** A solid triangular arrowhead at `tip`, pointing along `dir` (normalized, XZ-plane). */
+function buildArrowhead(tip: Vector3, dir: Vector3, color: number, size = 10): Mesh {
+  const back = tip.clone().addScaledVector(dir, -size);
+  const px = -dir.z * size * 0.4;
+  const pz = dir.x * size * 0.4;
+  const y = tip.y + 0.5;
+  const positions = new Float32Array([
+    tip.x,
+    y,
+    tip.z,
+    back.x + px,
+    y,
+    back.z + pz,
+    back.x - px,
+    y,
+    back.z - pz,
+  ]);
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  return new Mesh(geo, new MeshBasicMaterial({ color, side: DoubleSide, depthWrite: false }));
+}
+
+const AXIS_COLOR = 0x7e57c2;
+
+/** Axis of advance — a centerline + arrowhead at the final point + a translucent width
+ * corridor (one flat quad per segment). */
+export function buildAxisGroup(pts: Vector3[], name: string): Group {
+  const g = new Group();
+  const line = new Line(
+    new BufferGeometry().setFromPoints(pts),
+    new LineBasicMaterial({
+      color: AXIS_COLOR,
+      depthTest: false,
+      transparent: true,
+    })
+  );
+  line.renderOrder = 999;
+  g.add(line);
+
+  for (let i = 1; i < pts.length; i++) {
+    const band = buildBandSegment(pts[i - 1], pts[i], 8, AXIS_COLOR);
+    if (band) g.add(band);
+  }
+
+  const last = pts[pts.length - 1];
+  const prev = pts[pts.length - 2] ?? pts[0];
+  const dir = new Vector3(last.x - prev.x, 0, last.z - prev.z);
+  if (dir.lengthSq() > 1e-9) {
+    dir.normalize();
+    g.add(buildArrowhead(last, dir, AXIS_COLOR));
+  }
+
+  for (const p of pts) g.add(marker(p, AXIS_COLOR, 1.5));
+  g.add(label(last.clone().add(new Vector3(0, 14, 0)), `AXIS ${name}`));
+  return g;
+}
+
+const OBJECTIVE_COLOR = 0xffca28;
+
+/** A named objective — a single point today (the area variant is a later-wave refinement). */
+export function buildObjectiveGroup(pts: Vector3[], name: string): Group {
+  const point = pts[0];
+  const g = new Group();
+  g.add(marker(point, OBJECTIVE_COLOR, 3));
+  g.add(label(point.clone().add(new Vector3(0, 14, 0)), `OBJ ${name}`));
+  return g;
+}
+
 export interface LosBuildResult {
   group: Group;
   blocked: boolean;
@@ -342,6 +508,14 @@ export function rebuildFeature(pf: PlanFeature, ctx: RebuildContext): Group {
       return buildArcGroup(pts);
     case 'los':
       return buildLosGroup(pts[0], pts[1], true, ctx.raycaster, ctx.tiles).group;
+    case 'boundary':
+    case 'phaseline':
+    case 'loa':
+      return buildLinearMeasureGroup(pts, pf.type, pf.name);
+    case 'axis':
+      return buildAxisGroup(pts, pf.name);
+    case 'objective':
+      return buildObjectiveGroup(pts, pf.name);
     default: {
       const exhaustive: never = pf.type;
       throw new Error(`rebuildFeature: unknown PlanFeature type ${exhaustive as string}`);

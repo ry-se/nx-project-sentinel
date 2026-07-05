@@ -14,11 +14,15 @@ import {
 import type { GeoFrame } from './geoFrame';
 import {
   buildArcGroup,
+  buildAxisGroup,
   buildDistanceGroup,
   buildFocusGroup,
+  buildLinearMeasureGroup,
   buildLosGroup,
+  buildObjectiveGroup,
   fmtArea,
   fmtDist,
+  type LinearMeasureType,
   marker,
   MAT_MEASURE,
   pathLength,
@@ -29,7 +33,29 @@ import {
 } from './planFeature';
 import type { ViewshedController } from './viewshed';
 
-export type StratTool = 'select' | 'distance' | 'focus' | 'arc' | 'los' | 'viewshed';
+export type StratTool =
+  | 'select'
+  | 'distance'
+  | 'focus'
+  | 'arc'
+  | 'los'
+  | 'viewshed'
+  | 'boundary'
+  | 'phaseline'
+  | 'loa'
+  | 'axis'
+  | 'objective';
+
+const LINEAR_MEASURE_TOOLS: LinearMeasureType[] = ['boundary', 'phaseline', 'loa'];
+const LINEAR_MEASURE_NAME_PREFIX: Record<LinearMeasureType, string> = {
+  boundary: 'BDRY',
+  phaseline: 'PL',
+  loa: 'LOA',
+};
+
+function isLinearMeasureTool(tool: StratTool): tool is LinearMeasureType {
+  return (LINEAR_MEASURE_TOOLS as StratTool[]).includes(tool);
+}
 
 export const TOOL_HINTS: Record<StratTool, string> = {
   select: 'SELECT — drag to pan, right-drag to orbit, scroll to zoom',
@@ -38,6 +64,11 @@ export const TOOL_HINTS: Record<StratTool, string> = {
   arc: 'FIRE ARC — click ① weapon ② max-range point ③ end bearing',
   los: 'LINE OF SIGHT — click observer, then target. Buildings block the ray.',
   viewshed: 'VIEWSHED — click observer, aim with mouse (green = seen, red = hidden), click to lock',
+  boundary: 'BOUNDARY — click waypoints, right-click to finish',
+  phaseline: 'PHASE LINE — click waypoints, right-click to finish',
+  loa: 'LIMIT OF ADVANCE — click waypoints, right-click to finish',
+  axis: 'AXIS OF ADVANCE — click waypoints, right-click to finish (arrow points last→first)',
+  objective: 'OBJECTIVE — click to place',
 };
 
 /** A row in the strategist feature list (todo 12) — the panel's read-only view of a feature. */
@@ -357,7 +388,16 @@ export class StrategistController {
           this.onStatus('VIEWSHED — sweep the mouse to aim, click to lock');
         }
         break;
+      case 'axis':
+        this.onStatus(`${this.draft.length} pts — right-click to finish (arrow at last point)`);
+        break;
+      case 'objective':
+        this.finalizeObjective();
+        break;
       default:
+        if (isLinearMeasureTool(this.tool)) {
+          this.onStatus(`${this.draft.length} pts — right-click to finish`);
+        }
         break;
     }
     this.updatePreview();
@@ -366,6 +406,9 @@ export class StrategistController {
   private finishPolyline(): void {
     if (this.tool === 'distance' && this.draft.length >= 2) this.finalizeDistance();
     else if (this.tool === 'focus' && this.draft.length >= 3) this.finalizeFocus();
+    else if (isLinearMeasureTool(this.tool) && this.draft.length >= 2) {
+      this.finalizeLinearMeasure(this.tool);
+    } else if (this.tool === 'axis' && this.draft.length >= 2) this.finalizeAxis();
     else this.cancelDraft();
   }
 
@@ -472,5 +515,36 @@ export class StrategistController {
         ? `LOS BLOCKED at ${fmtDist(result.blockedAtM ?? result.distanceM)} of ${fmtDist(result.distanceM)}`
         : `LOS CLEAR — ${fmtDist(result.distanceM)}`
     );
+  }
+
+  private finalizeLinearMeasure(type: LinearMeasureType): void {
+    const pts = [...this.draft];
+    const prefix = LINEAR_MEASURE_NAME_PREFIX[type];
+    const name =
+      window.prompt(`Name this ${prefix}:`, `${prefix}-${this.countOfType(type) + 1}`) ?? prefix;
+    const g = buildLinearMeasureGroup(pts, type, name);
+    const pf = serializeFeature(type, pts, name, this.geoFrame);
+    this.addFeature(pf, g);
+    this.onStatus(`${name}: ${pts.length} pts, ${fmtDist(pathLength(pts))}`);
+  }
+
+  private finalizeAxis(): void {
+    const pts = [...this.draft];
+    const name =
+      window.prompt('Name this axis of advance:', `AXIS-${this.countOfType('axis') + 1}`) ?? 'AXIS';
+    const g = buildAxisGroup(pts, name);
+    const pf = serializeFeature('axis', pts, name, this.geoFrame);
+    this.addFeature(pf, g);
+    this.onStatus(`AXIS ${name}: ${fmtDist(pathLength(pts))}`);
+  }
+
+  private finalizeObjective(): void {
+    const pts = [...this.draft];
+    const name =
+      window.prompt('Name this objective:', `OBJ-${this.countOfType('objective') + 1}`) ?? 'OBJ';
+    const g = buildObjectiveGroup(pts, name);
+    const pf = serializeFeature('objective', pts, name, this.geoFrame);
+    this.addFeature(pf, g);
+    this.onStatus(`Objective: ${name}`);
   }
 }

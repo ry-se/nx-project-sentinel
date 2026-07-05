@@ -14,9 +14,9 @@ import {
 import { GeoFrame } from './geoFrame';
 import {
   buildLosGroup,
+  type PlanFeatureType,
   rebuildFeature,
   serializeFeature,
-  type PlanFeatureType,
 } from './planFeature';
 
 /**

@@ -23,6 +23,11 @@ const TOOLS: Array<{ id: StratTool; label: string }> = [
   { id: 'arc', label: '🧭 Fire Arc' },
   { id: 'los', label: '👁 Line of Sight' },
   { id: 'viewshed', label: '🟢 Viewshed' },
+  { id: 'boundary', label: '🚧 Boundary' },
+  { id: 'phaseline', label: '〰️ Phase Line' },
+  { id: 'loa', label: '⛔ Limit of Adv.' },
+  { id: 'axis', label: '➡️ Axis of Adv.' },
+  { id: 'objective', label: '🚩 Objective' },
 ];
 
 const VEHICLES: Array<{ id: VehicleType; label: string; key: string }> = [
