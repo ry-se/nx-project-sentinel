@@ -29,6 +29,7 @@ import {
   pathLength,
   type PlanFeature,
   type PlanFeatureType,
+  rebuildFeature,
   serializeFeature,
   shoelaceXZ,
 } from './planFeature';
@@ -191,6 +192,25 @@ export class StrategistController {
     this.viewshed.disable();
     this.onStatus('All features cleared');
     this.onFeaturesChanged();
+  }
+
+  /** The full `PlanFeature` set (todo 18: persistence saves this, not the live 3D groups). */
+  public exportFeatures(): PlanFeature[] {
+    return this.features.map((f) => f.planFeature);
+  }
+
+  /** Replaces the current scene with the given `PlanFeature`s, rebuilt via the todo-11
+   * round-trip seam — zero mock/placeholder data in the load path (invariant 3). */
+  public loadPlan(features: PlanFeature[]): void {
+    this.clearAll();
+    for (const pf of features) {
+      const group = rebuildFeature(pf, {
+        raycaster: this.raycaster,
+        tiles: this.tiles,
+        geoFrame: this.geoFrame,
+      });
+      this.addFeature(pf, group);
+    }
   }
 
   public get featureCount(): number {

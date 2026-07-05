@@ -27,6 +27,13 @@ import {
 
 import { type FeatureSummary, StrategistController, type StratTool } from './strategist';
 import type { Affiliation, Echelon } from './unitSymbol';
+import {
+  deletePlan as deletePlanFromStore,
+  listPlans as listPlansFromStore,
+  loadPlan as loadPlanFromStore,
+  type Plan,
+  savePlan as savePlanToStore,
+} from './planStore';
 import { ViewshedController } from './viewshed';
 import { LabelManager } from './labels';
 import { ProjectileManager } from './projectiles';
@@ -114,6 +121,10 @@ export interface Sandbox {
   setUnitAffiliation(affiliation: Affiliation): void;
   setUnitEchelon(echelon: Echelon): void;
   setMgrsHudEnabled(enabled: boolean): void;
+  savePlan(name: string): Plan;
+  loadPlan(id: string): void;
+  listPlans(): Plan[];
+  deletePlan(id: string): void;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -762,6 +773,11 @@ export function createSandbox(
     setMgrsHudEnabled: (enabled) => {
       strategist.mgrsHudEnabled = enabled;
     },
+    savePlan: (name) =>
+      savePlanToStore(name, strategist.exportFeatures(), anchor, new Date().toISOString()),
+    loadPlan: (id) => strategist.loadPlan(loadPlanFromStore(id).features),
+    listPlans: () => listPlansFromStore(),
+    deletePlan: (id) => deletePlanFromStore(id),
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;

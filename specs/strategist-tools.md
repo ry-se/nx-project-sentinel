@@ -205,6 +205,36 @@ picker, and pulling the LIVE feature set out of a running `StrategistController`
 `listFeatures()` returns only `FeatureSummary` rows for the panel — a future controller
 method exposing the full `PlanFeature[]` is the wire todo's job).
 
+### Persistence wiring (`strategist.ts`, `createSandbox.ts`, `WorldView.tsx`)
+
+`StrategistController.exportFeatures()` returns the full `PlanFeature[]` (not the
+`FeatureSummary` rows `listFeatures()` returns); `loadPlan(features)` clears the current
+scene and rebuilds every one via the todo-11 `rebuildFeature` seam, then registers each
+through the SAME `addFeature` path a live draft uses (invariant 3 — zero mock/placeholder
+data in the load path; a loaded feature is indistinguishable from a freshly-drawn one).
+
+`Sandbox.savePlan(name)` (`createSandbox.ts`) reads `strategist.exportFeatures()`, stamps
+`now` via `new Date().toISOString()` AT THIS UI/orchestration layer (never inside
+`planStore.ts` itself — todo 17 invariant 5), and calls `planStore.savePlan`.
+`Sandbox.loadPlan(id)` reads `planStore.loadPlan(id)` and hands the features to
+`strategist.loadPlan`. `listPlans`/`deletePlan` proxy directly to the store.
+
+`WorldView.tsx`'s strategist toolbar renders a "Plans" panel (a name field + Save, and a
+list of saved plans with Load/Delete) next to the feature-list and tools panels, refreshing
+on a `planVersion` counter bumped after save/delete (same pattern as the feature list's
+`featureVersion`).
+
+**Wave-1 gate (todo 18, `rules/wave-loop.md`):** `strategist.persistence.test.ts` builds a
+MIXED feature set (a measurement tool, a control measure, an axis of advance, and a unit
+symbol) via real pointer-event drafting on one `StrategistController`, saves it through the
+real `planStore` (jsdom's real `localStorage`), then loads it into a GENUINELY SEPARATE,
+freshly-constructed `StrategistController` and asserts the rebuilt feature set matches
+(types, names, and geo points byte-for-byte — invariant 2/todo-11-invariant-2). This is the
+automated half of the Wave-1 gate's acceptance criterion. **The manual Flow-A walk in a
+real browser is deferred to the user** — this session used the Chrome DevTools protocol
+for the Wave-0 walk, but the user asked not to continue doing so for token-cost reasons,
+so no walk receipt is recorded here for Wave 1; the user will exercise it themselves.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

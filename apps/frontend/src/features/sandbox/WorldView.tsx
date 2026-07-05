@@ -7,6 +7,7 @@ import {
   type Sandbox,
   type SandboxMode,
 } from './engine/createSandbox';
+import type { Plan } from './engine/planStore';
 import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
 import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strategist';
 import type { Affiliation, Echelon } from './engine/unitSymbol';
@@ -81,11 +82,19 @@ export function WorldView() {
   const [unitAffiliation, setUnitAffiliationState] = useState<Affiliation>('friendly');
   const [unitEchelon, setUnitEchelonState] = useState<Echelon>('platoon');
   const [mgrsHudOn, setMgrsHudOn] = useState(true);
+  const [planVersion, setPlanVersion] = useState(0);
+  const [planNameDraft, setPlanNameDraft] = useState('');
 
   const features = useMemo<FeatureSummary[]>(
     () => sandboxRef.current?.listFeatures() ?? [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- featureVersion is the refresh signal; the list itself lives on sandboxRef, not React state
     [featureVersion]
+  );
+
+  const plans = useMemo<Plan[]>(
+    () => sandboxRef.current?.listPlans() ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- planVersion is the refresh signal
+    [planVersion]
   );
 
   useEffect(() => {
@@ -198,6 +207,24 @@ export function WorldView() {
   const undoLastFeature = useCallback(() => {
     sandboxRef.current?.undoLastFeature();
     setSelectedFeatureId(null);
+  }, []);
+
+  const savePlan = useCallback(() => {
+    const trimmed = planNameDraft.trim();
+    if (!trimmed || !sandboxRef.current) return;
+    sandboxRef.current.savePlan(trimmed);
+    setPlanVersion((v) => v + 1);
+  }, [planNameDraft]);
+
+  const loadPlan = useCallback((id: string) => {
+    sandboxRef.current?.loadPlan(id);
+    setSelectedFeatureId(null);
+    setFeatureVersion((v) => v + 1);
+  }, []);
+
+  const deletePlan = useCallback((id: string) => {
+    sandboxRef.current?.deletePlan(id);
+    setPlanVersion((v) => v + 1);
   }, []);
 
   // Live camera-pose readout (lon/lat/alt/heading) — this is the metadata a
@@ -327,6 +354,54 @@ export function WorldView() {
           >
             🗑 Clear All
           </button>
+        </div>
+      )}
+
+      {/* Strategist plan persistence (todo 18: save/load/delete named plans) */}
+      {apiKey && !fatal && mode === 'strategist' && (
+        <div className="rounded-box fixed left-[28rem] top-32 z-40 flex max-h-[60vh] w-56 flex-col gap-1 overflow-y-auto bg-base-100 p-2 shadow-md">
+          <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
+            Plans
+          </div>
+          <div className="flex gap-1 px-2">
+            <input
+              aria-label="Plan name"
+              className="input input-bordered input-xs flex-1"
+              placeholder="COY ATTACK"
+              value={planNameDraft}
+              onChange={(e) => setPlanNameDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && savePlan()}
+            />
+            <button
+              className="btn btn-xs border-none bg-indigo-600 text-white disabled:opacity-30"
+              onClick={savePlan}
+              disabled={!planNameDraft.trim()}
+              aria-label="Save plan"
+            >
+              💾
+            </button>
+          </div>
+          {plans.length === 0 && (
+            <div className="px-2 py-1 text-xs text-base-content/40">No saved plans yet</div>
+          )}
+          {plans.map((p) => (
+            <div key={p.id} className="flex items-center gap-1 rounded px-1 py-0.5">
+              <button
+                className="btn btn-ghost btn-xs flex-1 justify-start truncate font-normal"
+                onClick={() => loadPlan(p.id)}
+                title={`Load "${p.name}" (${p.features.length} features)`}
+              >
+                {p.name}
+              </button>
+              <button
+                className="btn btn-ghost btn-xs px-1 font-normal text-red-500"
+                onClick={() => deletePlan(p.id)}
+                aria-label={`Delete plan ${p.name}`}
+              >
+                🗑
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
