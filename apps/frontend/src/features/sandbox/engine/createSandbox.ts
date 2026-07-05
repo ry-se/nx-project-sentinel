@@ -133,6 +133,11 @@ export interface Sandbox {
   deleteViewpoint(id: string): void;
   reorderViewpoints(orderedIds: string[]): void;
   restoreViewpoint(id: string): void;
+  playBriefNext(): void;
+  playBriefPrevious(): void;
+  playBriefGoTo(index: number): void;
+  cancelBriefPlayback(): void;
+  getBriefPlaybackState(): { currentIndex: number; isPlaying: boolean };
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -680,6 +685,7 @@ export function createSandbox(
     }
     projectiles.update(dt);
 
+    if (mode === 'strategist') strategist.update(performance.now());
     camera.updateMatrixWorld();
     // Center the player load-region on the active vehicle (world → tiles-group
     // local), so high detail streams in all around the player every frame.
@@ -803,6 +809,11 @@ export function createSandbox(
     deleteViewpoint: (id) => strategist.deleteViewpoint(id),
     reorderViewpoints: (orderedIds) => strategist.reorderViewpoints(orderedIds),
     restoreViewpoint: (id) => strategist.restoreViewpoint(id),
+    playBriefNext: () => strategist.playBriefNext(performance.now()),
+    playBriefPrevious: () => strategist.playBriefPrevious(performance.now()),
+    playBriefGoTo: (index) => strategist.playBriefGoTo(index, performance.now()),
+    cancelBriefPlayback: () => strategist.cancelBriefPlayback(),
+    getBriefPlaybackState: () => strategist.briefPlaybackState,
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;

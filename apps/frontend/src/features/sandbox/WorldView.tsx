@@ -256,6 +256,21 @@ export function WorldView() {
     [viewpoints]
   );
 
+  // Brief-playback step indicator (todo 20) — the interpolation is driven by the render
+  // loop, not a React callback, so poll it (same pattern as the camera-pose readout below).
+  const [briefState, setBriefState] = useState<{ currentIndex: number; isPlaying: boolean }>({
+    currentIndex: 0,
+    isPlaying: false,
+  });
+  useEffect(() => {
+    if (!apiKey || loading || fatal || mode !== 'strategist') return;
+    const timer = window.setInterval(() => {
+      const sb = sandboxRef.current;
+      if (sb) setBriefState(sb.getBriefPlaybackState());
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [apiKey, loading, fatal, mode]);
+
   // Live camera-pose readout (lon/lat/alt/heading) — this is the metadata a
   // real drone would embed; copy it whenever you take a screenshot.
   useEffect(() => {
@@ -496,6 +511,33 @@ export function WorldView() {
               </button>
             </div>
           ))}
+          {viewpoints.length > 0 && (
+            <>
+              <div className="divider my-0" />
+              <div className="flex items-center justify-between px-2 pb-1">
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                  onClick={() => sandboxRef.current?.playBriefPrevious()}
+                  disabled={briefState.currentIndex <= 0}
+                  aria-label="Previous viewpoint"
+                >
+                  ⏮
+                </button>
+                <span className="text-[10px] text-base-content/60">
+                  {briefState.currentIndex + 1} / {viewpoints.length}
+                  {briefState.isPlaying ? ' ▶' : ''}
+                </span>
+                <button
+                  className="btn btn-ghost btn-xs px-1 font-normal disabled:opacity-20"
+                  onClick={() => sandboxRef.current?.playBriefNext()}
+                  disabled={briefState.currentIndex >= viewpoints.length - 1}
+                  aria-label="Next viewpoint"
+                >
+                  ⏭
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

@@ -36,6 +36,7 @@ import {
 } from './planFeature';
 import { type Affiliation, buildUnitSymbolGroup, type Echelon, ECHELON_ABBR } from './unitSymbol';
 import type { ViewshedController } from './viewshed';
+import { BriefPlaybackStepper } from './briefPlayback';
 import { restoreViewpointPose, type Viewpoint } from './viewpoint';
 
 export type StratTool =
@@ -125,6 +126,7 @@ export class StrategistController {
   private cursorGround: Vector3 | null = null;
   private features: Feature[] = [];
   private viewpoints: Viewpoint[] = [];
+  private briefStepper = new BriefPlaybackStepper(() => this.listViewpoints());
   private featureRoot = new Group();
   private previewRoot = new Group();
   private selectionRoot = new Group();
@@ -295,6 +297,48 @@ export class StrategistController {
     this.onViewpointsChanged();
   }
 
+  // ---------- brief playback (todo 20) ----------
+
+  private currentLocalPose(): {
+    position: [number, number, number];
+    quaternion: [number, number, number, number];
+  } {
+    return {
+      position: this.camera.position.toArray() as [number, number, number],
+      quaternion: this.camera.quaternion.toArray() as [number, number, number, number],
+    };
+  }
+
+  public playBriefNext(nowMs: number): void {
+    this.briefStepper.next(this.currentLocalPose(), nowMs);
+  }
+
+  public playBriefPrevious(nowMs: number): void {
+    this.briefStepper.previous(this.currentLocalPose(), nowMs);
+  }
+
+  public playBriefGoTo(index: number, nowMs: number): void {
+    this.briefStepper.goTo(index, this.currentLocalPose(), nowMs);
+  }
+
+  public cancelBriefPlayback(): void {
+    this.briefStepper.cancel();
+  }
+
+  public get briefPlaybackState(): { currentIndex: number; isPlaying: boolean } {
+    return { currentIndex: this.briefStepper.currentIndex, isPlaying: this.briefStepper.isPlaying };
+  }
+
+  /** Called every frame from the render loop (`createSandbox.ts`) — applies the current
+   * interpolated pose to the camera when a brief transition is in progress. */
+  public update(nowMs: number): void {
+    const pose = this.briefStepper.tick(nowMs);
+    if (!pose) return;
+    this.camera.position.fromArray(pose.position);
+    this.camera.quaternion.fromArray(pose.quaternion);
+    this.camera.updateMatrixWorld();
+  }
+
   public removeFeature(id: string): void {
     const idx = this.features.findIndex((f) => f.id === id);
     if (idx === -1) return;
@@ -364,6 +408,7 @@ export class StrategistController {
 
   private onDown = (e: PointerEvent): void => {
     if (!this.enabled) return;
+    this.cancelBriefPlayback(); // manual input cancels playback cleanly (invariant 3)
     this.dragButton = e.button;
     this.dragged = false;
     this.lastX = e.clientX;
@@ -458,6 +503,7 @@ export class StrategistController {
 
   private onWheel = (e: WheelEvent): void => {
     if (!this.enabled) return;
+    this.cancelBriefPlayback(); // manual input cancels playback cleanly (invariant 3)
     e.preventDefault();
     this.raycaster.setFromCamera(this.ndc(e), this.camera);
     const speed = Math.max(this.camera.position.y - this.pivot.y, 60) * 0.0012;

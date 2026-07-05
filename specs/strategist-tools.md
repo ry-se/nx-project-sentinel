@@ -263,6 +263,34 @@ field + save button, an ordered list with jump-to-view (click), ↑/↓ reorder 
 delete — refreshing on `onViewpointsChanged` via a `viewpointVersion` counter (same
 pattern as the feature list's `featureVersion`).
 
+## Brief playback (`briefPlayback.ts`, `strategist.ts`)
+
+Next/previous/go-to-index controls fly the camera smoothly between saved viewpoints
+(todo 19), in `order` (invariant 1), instead of snapping.
+
+`interpolatePose(from, to, t)` (`briefPlayback.ts`) lerps position and SLERPS the
+quaternion (invariant 2 — never lerp+renormalize euler angles, which introduces
+gimbal/roll artifacts); `t` is clamped to `[0, 1]` so `t=0`/`t=1` are exactly the
+endpoints. `from` is always the LIVE camera's current transient position+quaternion
+(never a saved pose — there's nothing to fake here); `to` is a target viewpoint's full
+`CameraPose`. `BRIEF_TRANSITION_DURATION_MS` (1500ms) is a named constant, not a magic
+literal at the call site (invariant 4).
+
+`BriefPlaybackStepper` (`briefPlayback.ts`) owns the transition state (current index,
+transition-start time, playing flag) and exposes `next`/`previous`/`goTo`/`cancel`/`tick`
+— every method takes `nowMs` explicitly (never reads `performance.now()` internally), so
+it's deterministically testable. `StrategistController` owns ONE stepper instance
+(`briefStepper`), wired to `listViewpoints()`; `update(nowMs)` — called every frame from
+`createSandbox.ts`'s render loop while in strategist mode — applies `tick()`'s
+interpolated pose directly to the camera.
+
+Manual camera input (`onDown`, `onWheel`) calls `cancelBriefPlayback()` FIRST, before any
+other handling — playback stops cleanly wherever the camera was, never left
+half-interpolated (invariant 3). `WorldView.tsx` polls `getBriefPlaybackState()` every
+200ms (the interpolation itself runs in the render loop, not React state, so a step
+indicator needs to poll — same pattern as the existing camera-pose HUD readout) to show
+"`<n> / <total>`" + a play indicator, with prev/next buttons in the brief-sequence panel.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:
