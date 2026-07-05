@@ -32,6 +32,7 @@ const TOOLS: Array<{ id: StratTool; label: string }> = [
   { id: 'axis', label: '➡️ Axis of Adv.' },
   { id: 'objective', label: '🚩 Objective' },
   { id: 'symbol', label: '⬛ Unit Symbol' },
+  { id: 'groundWalk', label: '🚶 Ground Walk' },
 ];
 
 const AFFILIATIONS: Affiliation[] = ['friendly', 'enemy', 'neutral'];
@@ -139,6 +140,7 @@ export function WorldView() {
             if (next === 'strategist') setFeatureVersion((v) => v + 1);
           },
           onFeaturesChanged: () => setFeatureVersion((v) => v + 1),
+          onToolChanged: setTool,
           onViewpointsChanged: () => setViewpointVersion((v) => v + 1),
           onVehicle: setActiveVehicle,
           onAttributions: setAttributions,
@@ -318,6 +320,18 @@ export function WorldView() {
             {mode === 'strategist' ? '🛰 STRATEGIST' : '🎮 PLAYER'}
             <span className="ml-2 font-normal text-base-content/40">TAB to switch</span>
           </div>
+        </div>
+      )}
+
+      {/* Ground-walk exit affordance (todo 21) — Escape also works; this is for discoverability */}
+      {apiKey && !fatal && mode === 'strategist' && tool === 'groundWalk' && (
+        <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
+          <button
+            className="btn btn-sm border-none bg-indigo-600 text-white shadow-md hover:bg-indigo-700"
+            onClick={() => sandboxRef.current?.exitGroundWalk()}
+          >
+            🚶 Exit Ground Walk (Esc)
+          </button>
         </div>
       )}
 

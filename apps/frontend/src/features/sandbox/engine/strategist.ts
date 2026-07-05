@@ -37,6 +37,7 @@ import {
 import { type Affiliation, buildUnitSymbolGroup, type Echelon, ECHELON_ABBR } from './unitSymbol';
 import type { ViewshedController } from './viewshed';
 import { BriefPlaybackStepper } from './briefPlayback';
+import { GroundWalkController, type MoveDirection } from './groundWalk';
 import { restoreViewpointPose, type Viewpoint } from './viewpoint';
 
 export type StratTool =
@@ -51,13 +52,28 @@ export type StratTool =
   | 'loa'
   | 'axis'
   | 'objective'
-  | 'symbol';
+  | 'symbol'
+  | 'groundWalk';
 
 const LINEAR_MEASURE_TOOLS: LinearMeasureType[] = ['boundary', 'phaseline', 'loa'];
 const LINEAR_MEASURE_NAME_PREFIX: Record<LinearMeasureType, string> = {
   boundary: 'BDRY',
   phaseline: 'PL',
   loa: 'LOA',
+};
+
+/** Radians of look rotation per pixel of mouse-drag while ground-walking. */
+const GROUND_WALK_LOOK_SENSITIVITY = 0.0025;
+
+const GROUND_WALK_KEY_MAP: Record<string, MoveDirection | undefined> = {
+  w: 'forward',
+  ArrowUp: 'forward',
+  s: 'back',
+  ArrowDown: 'back',
+  a: 'left',
+  ArrowLeft: 'left',
+  d: 'right',
+  ArrowRight: 'right',
 };
 
 function isLinearMeasureTool(tool: StratTool): tool is LinearMeasureType {
@@ -77,6 +93,8 @@ export const TOOL_HINTS: Record<StratTool, string> = {
   axis: 'AXIS OF ADVANCE — click waypoints, right-click to finish (arrow points last→first)',
   objective: 'OBJECTIVE — click to place',
   symbol: 'UNIT SYMBOL — click to place (set affiliation/echelon in the panel first)',
+  groundWalk:
+    'GROUND WALK — click to drop to eye height. Drag: look. WASD/arrows: move. Escape: exit.',
 };
 
 /** A row in the strategist feature list (todo 12) — the panel's read-only view of a feature. */
@@ -106,6 +124,12 @@ export class StrategistController {
   public onFeaturesChanged: () => void = () => {
     /* Custom Hook */
   };
+  /** Fires on every `setTool` — including an internal tool change like ground-walk's
+   * Escape-triggered exit — so a host UI's tool-highlight state stays in sync even when
+   * the tool changed WITHOUT a direct `setTool` call from that UI. */
+  public onToolChanged: (tool: StratTool) => void = () => {
+    /* Custom Hook */
+  };
   /** Affiliation/echelon applied to the NEXT placed `symbol` — set via the strategist
    * UI's selector, not per-placement (todo 14). */
   public unitAffiliation: Affiliation = 'friendly';
@@ -127,6 +151,8 @@ export class StrategistController {
   private features: Feature[] = [];
   private viewpoints: Viewpoint[] = [];
   private briefStepper = new BriefPlaybackStepper(() => this.listViewpoints());
+  private groundWalkController = new GroundWalkController();
+  private lastUpdateMs: number | null = null;
   private featureRoot = new Group();
   private previewRoot = new Group();
   private selectionRoot = new Group();
@@ -169,7 +195,20 @@ export class StrategistController {
       if (this.enabled) e.preventDefault();
     });
     window.addEventListener('keydown', (e) => {
-      if (this.enabled && e.key === 'Escape') this.cancelDraft();
+      if (!this.enabled) return;
+      if (e.key === 'Escape') {
+        if (this.groundWalkController.isActive) this.exitGroundWalk();
+        else this.cancelDraft();
+        return;
+      }
+      const direction = GROUND_WALK_KEY_MAP[e.key];
+      if (direction && this.groundWalkController.isActive)
+        this.groundWalkController.setMoving(direction, true);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (!this.enabled) return;
+      const direction = GROUND_WALK_KEY_MAP[e.key];
+      if (direction) this.groundWalkController.setMoving(direction, false);
     });
   }
 
@@ -190,6 +229,7 @@ export class StrategistController {
     this.cancelDraft();
     this.tool = tool;
     this.onStatus(TOOL_HINTS[tool]);
+    this.onToolChanged(tool);
   }
 
   public clearAll(): void {
@@ -332,11 +372,19 @@ export class StrategistController {
   /** Called every frame from the render loop (`createSandbox.ts`) — applies the current
    * interpolated pose to the camera when a brief transition is in progress. */
   public update(nowMs: number): void {
+    const dtSeconds = this.lastUpdateMs === null ? 0 : (nowMs - this.lastUpdateMs) / 1000;
+    this.lastUpdateMs = nowMs;
+
     const pose = this.briefStepper.tick(nowMs);
-    if (!pose) return;
-    this.camera.position.fromArray(pose.position);
-    this.camera.quaternion.fromArray(pose.quaternion);
-    this.camera.updateMatrixWorld();
+    if (pose) {
+      this.camera.position.fromArray(pose.position);
+      this.camera.quaternion.fromArray(pose.quaternion);
+      this.camera.updateMatrixWorld();
+    }
+
+    if (this.groundWalkController.isActive) {
+      this.groundWalkController.update(this.camera, this.raycaster, this.tiles, dtSeconds);
+    }
   }
 
   public removeFeature(id: string): void {
@@ -419,6 +467,21 @@ export class StrategistController {
 
   private onMove = (e: PointerEvent): void => {
     if (!this.enabled) return;
+
+    if (this.groundWalkController.isActive) {
+      if (this.dragButton === 0) {
+        const dx = e.clientX - this.lastX;
+        const dy = e.clientY - this.lastY;
+        if (Math.abs(dx) + Math.abs(dy) > 3) this.dragged = true;
+        this.groundWalkController.look(
+          dx * GROUND_WALK_LOOK_SENSITIVITY,
+          dy * GROUND_WALK_LOOK_SENSITIVITY
+        );
+        this.lastX = e.clientX;
+        this.lastY = e.clientY;
+      }
+      return;
+    }
 
     if (this.dragButton === 0 || this.dragButton === 2) {
       const dx = e.clientX - this.lastX;
@@ -551,6 +614,9 @@ export class StrategistController {
         break;
       case 'symbol':
         this.finalizeSymbol();
+        break;
+      case 'groundWalk':
+        this.enterGroundWalkAt(this.draft[this.draft.length - 1]);
         break;
       default:
         if (isLinearMeasureTool(this.tool)) {
@@ -720,5 +786,25 @@ export class StrategistController {
     const pf = serializeFeature('unit', pts, name, this.geoFrame, { affiliation, echelon });
     this.addFeature(pf, g);
     this.onStatus(`Unit placed: ${name}`);
+  }
+
+  // ---------- ground walk (todo 21) ----------
+
+  private enterGroundWalkAt(groundPoint: Vector3): void {
+    this.groundWalkController.enter(this.camera, groundPoint, this.raycaster, this.tiles);
+    this.draft = [];
+    this.hover = null;
+    this.previewRoot.clear();
+    this.onStatus(TOOL_HINTS.groundWalk);
+  }
+
+  /** Restores the pre-walk camera exactly (invariant 2) and returns to `select`. */
+  public exitGroundWalk(): void {
+    this.groundWalkController.exit(this.camera);
+    this.setTool('select');
+  }
+
+  public get isGroundWalkActive(): boolean {
+    return this.groundWalkController.isActive;
   }
 }

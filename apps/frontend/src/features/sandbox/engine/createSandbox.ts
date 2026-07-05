@@ -104,6 +104,7 @@ export interface SandboxCallbacks {
   onHud(text: string): void;
   onMode(mode: SandboxMode): void;
   onFeaturesChanged?(): void;
+  onToolChanged?(tool: StratTool): void;
   onViewpointsChanged?(): void;
   onVehicle?(type: VehicleType): void;
   onAttributions(text: string): void;
@@ -138,6 +139,8 @@ export interface Sandbox {
   playBriefGoTo(index: number): void;
   cancelBriefPlayback(): void;
   getBriefPlaybackState(): { currentIndex: number; isPlaying: boolean };
+  exitGroundWalk(): void;
+  isGroundWalkActive(): boolean;
   switchVehicle(type: VehicleType): void;
   setLabelsVisible(visible: boolean): void;
   getCameraPose(): CameraPose;
@@ -469,6 +472,7 @@ export function createSandbox(
     if (mode === 'strategist') cb.onStatus(text);
   };
   strategist.onFeaturesChanged = () => cb.onFeaturesChanged?.();
+  strategist.onToolChanged = (tool) => cb.onToolChanged?.(tool);
   strategist.onViewpointsChanged = () => cb.onViewpointsChanged?.();
 
   function setMode(next: SandboxMode): void {
@@ -814,6 +818,8 @@ export function createSandbox(
     playBriefGoTo: (index) => strategist.playBriefGoTo(index, performance.now()),
     cancelBriefPlayback: () => strategist.cancelBriefPlayback(),
     getBriefPlaybackState: () => strategist.briefPlaybackState,
+    exitGroundWalk: () => strategist.exitGroundWalk(),
+    isGroundWalkActive: () => strategist.isGroundWalkActive,
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;

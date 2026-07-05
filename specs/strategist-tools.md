@@ -291,6 +291,42 @@ half-interpolated (invariant 3). `WorldView.tsx` polls `getBriefPlaybackState()`
 indicator needs to poll — same pattern as the existing camera-pose HUD readout) to show
 "`<n> / <total>`" + a play indicator, with prev/next buttons in the brief-sequence panel.
 
+## Ground walk (`groundWalk.ts`, `strategist.ts`)
+
+A `groundWalk` `StratTool` drops the camera to eye height at a clicked point and lets
+mouse-look + WASD/arrow movement explore from there — confirming what a subordinate will
+actually see on the ground, which the orbit-only camera can't give. No collision (walking
+through buildings is acceptable for a briefing tool) and no full FPS controller — a
+look-around confirm tool.
+
+- `EYE_HEIGHT_STANDING_M` (1.7 m) — extends the LOS `EYE_HEIGHT` naming convention
+  (`planFeature.ts`) into this distinct domain (invariant 4).
+- `groundWalkEyeY(raycaster, tiles, x, z, eyeHeight?)` — raycasts straight down at `(x,
+z)`, returns `surfaceY + eyeHeight` or `null` if nothing is hit. Called every frame
+  during movement (not interpolated/assumed), so the walk height tracks the actual
+  terrain as it rises and falls (invariant 1).
+- `computeLookQuaternion(yaw, pitch)` — pitch clamped to ±89° (never flips past straight
+  up/down) and Euler order `'YXZ'` (yaw about world Y, then pitch about the resulting
+  local X) so there is never a roll component (invariant 3).
+- `GroundWalkController` (`groundWalk.ts`) owns yaw/pitch/XZ position + which WASD/arrow
+  keys are held. `enter()` saves the CURRENT camera (position+quaternion) ONLY on first
+  entry — a second `enter()` while already active (clicking a new spot mid-walk)
+  re-teleports without clobbering what `exit()` restores (invariant 2). `update(camera,
+raycaster, tiles, dtSeconds)` moves along the camera's forward/right projected flat
+  onto XZ (so pitch doesn't tilt movement into the ground/sky), then re-raycasts for the
+  new eye height.
+
+`StrategistController` owns one `GroundWalkController`. Entering (`place()`'s
+`'groundWalk'` case) and the render-loop `update(nowMs)` (which now also drives
+`groundWalkController.update` when active, alongside brief playback) are the only new
+integration points. Manual pointer-drag becomes mouse-look (not pan/orbit) while active;
+`onDown`/`onWheel` no longer apply camera-drag physics during a walk. Escape (or the
+"Exit Ground Walk" button, `WorldView.tsx`) calls `exitGroundWalk()`, which restores the
+saved camera and calls `setTool('select')` — the latter fires a new `onToolChanged`
+callback so a host UI's tool-highlight state stays in sync even when the tool changed
+from something OTHER than a direct `Sandbox.setTool` call (e.g. this Escape-triggered
+exit).
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:
