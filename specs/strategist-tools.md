@@ -375,6 +375,46 @@ accreditation/handling-caveat enforcement is an environment gate, not code).
   `sandbox.setClassification` so the two stay in sync; `loadPlan` similarly re-syncs
   local state from `sandbox.getClassification()` (`WorldView.tsx:244`) after a load.
 
+## Export to GeoJSON / KML (`exportPlan.ts`)
+
+Hand-off is the cheap answer to the multi-user gate (D-Army-4(a) async-share): a subordinate
+opens the exported file elsewhere, no live session needed. `exportGeoJSON(plan) →
+string` and `exportKML(plan) → string` both read ONLY `PlanFeature.points.geo` (lat/lon/altM
+captured at draw time, `geoFrame.ts:4-8`) — no re-projection, no re-derivation from `.local`
+(invariant 1).
+
+- `GEOMETRY_TYPE` (`exportPlan.ts`) is the per-`PlanFeatureType` geometry mapping
+  (invariant 4), derived from what each type's builder in `planFeature.ts` actually draws:
+  `focus` is the one closed-area boundary tool today (`buildFocusGroup`, ≥3 points) → maps
+  to `Polygon`. `objective` and `unit` are always single-point placements
+  (`buildObjectiveGroup`/`buildUnitSymbolGroup`) → `Point` each — NOTE `objective`'s
+  area variant does not exist yet (`planFeature.ts:416` documents it as "a later-wave
+  refinement"), so `objective` is `Point`, not `Polygon`, contrary to an earlier
+  assumption. Every other type (`distance`, `los`, `boundary`, `phaseline`, `loa`, `axis`)
+  draws an open path → `LineString`. `arc`'s 3 points are center/radius/bearing CONTROL
+  points, not a swept-wedge boundary — exported as the raw control-point path (`LineString`),
+  honoring invariant 1 rather than re-deriving the actual wedge geometry.
+- `geometryData(pf)` closes an unclosed `Polygon` ring by repeating the first coordinate at
+  the end (RFC 7946 §3.1.6 / KML `LinearRing` both require a closed ring) — only for
+  `Polygon`-mapped types; `LineString`/`Point` pass `points.geo` through untouched.
+- `featureProperties(pf, classification)` — every exported feature carries `name`, `type`,
+  and the PLAN's `classification` (todo 22, invariant 3), plus `provenance` when present
+  (`pf.metadata.provenance`) and `affiliation`/`echelon` for `unit`-type features only.
+- `exportGeoJSON` produces a `FeatureCollection` (RFC 7946 §3.3): one `Feature` per
+  `PlanFeature`, `geometry.coordinates` in `[lon, lat, altM]` order (invariant 2 — GeoJSON's
+  own coordinate order, not `[lat, lon]`).
+- `exportKML` produces well-formed XML (invariant 2): one `Placemark` per `PlanFeature`,
+  `<name>` from `pf.name`, an `<ExtendedData>` block flattening `featureProperties` into
+  `<Data name="…"><value>…</value></Data>` pairs (`provenance` flattens to
+  `provenance_author`/`provenance_createdAt`/`provenance_updatedAt` — KML `Data` values are
+  flat strings, not nested objects), and the geometry element matching `GEOMETRY_TYPE`
+  (`<Point>`/`<LineString>`/`<Polygon><outerBoundaryIs><LinearRing>…`). Every text value
+  (`name`, `Data` name/value) is XML-escaped (`xmlEscape`) — a feature named with `<`/`&`/`"`
+  cannot inject markup into the exported document.
+
+**Out of this todo's scope** (the wire todo lands it): the UI download buttons and a live
+export→re-parse check in a real browser session — todo 24.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:
