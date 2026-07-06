@@ -49,10 +49,13 @@ import {
 import type { ViewshedController } from './viewshed';
 import { BriefPlaybackStepper } from './briefPlayback';
 import {
+  buildRouteExposureGroup,
   type ElevationSample,
   estimateMoveTimeMinutes,
+  exposureFraction,
   type MoveRate,
   sampleElevationProfile,
+  sampleRouteExposure,
 } from './elevationProfile';
 import { GroundWalkController, type MoveDirection } from './groundWalk';
 import { resolveRehearsalStep } from './rehearsal';
@@ -231,6 +234,11 @@ export class StrategistController {
   private featureRoot = new Group();
   private previewRoot = new Group();
   private selectionRoot = new Group();
+  /** Transient Wave-4 analysis overlays (route exposure) — a SEPARATE lifecycle from
+   * `previewRoot` (which the draft/tool-switch flow clears constantly): an exposure
+   * overlay should persist while the user inspects it, not vanish on the next tool
+   * interaction. Cleared explicitly or by `clearAll()`. */
+  private analysisRoot = new Group();
   private selectedId: string | null = null;
   private pivot = new Vector3();
 
@@ -259,6 +267,7 @@ export class StrategistController {
     scene.add(this.featureRoot);
     scene.add(this.previewRoot);
     scene.add(this.selectionRoot);
+    scene.add(this.analysisRoot);
     this.featureRoot.renderOrder = 999;
     (this.raycaster as unknown as { firstHitOnly: boolean }).firstHitOnly = true;
 
@@ -314,6 +323,7 @@ export class StrategistController {
     this.phases = [];
     this.phaseFilter = ALL_PHASES;
     this.timelineStepper.cancel();
+    this.analysisRoot.clear();
     this.clearSelection();
     this.viewshed.disable();
     this.onStatus('All features cleared');
@@ -770,6 +780,33 @@ export class StrategistController {
     const points = this.pathPoints(featureId);
     if (!points) return null;
     return estimateMoveTimeMinutes(pathLength(points), rate);
+  }
+
+  /** M2 — route exposure (todo 31): samples `featureId`'s path against `threatFeatureId`'s
+   * position (a placed `unit`), renders the colour-coded overlay into `analysisRoot`, and
+   * returns the Gate-5 summary (exposed fraction + sample count). `null` when either
+   * feature doesn't qualify (path / unit respectively). */
+  public runRouteExposure(
+    featureId: string,
+    threatFeatureId: string
+  ): { fraction: number; sampleCount: number } | null {
+    const points = this.pathPoints(featureId);
+    if (!points) return null;
+    const threat = this.features.find((f) => f.id === threatFeatureId);
+    if (threat?.planFeature.type !== 'unit') return null;
+    const threatPoint = threat.planFeature.points.local[0];
+    const threatEye = new Vector3(threatPoint.x, threatPoint.y, threatPoint.z);
+
+    const samples = sampleRouteExposure(points, threatEye, this.raycaster, this.tiles);
+    this.analysisRoot.clear();
+    const overlay = buildRouteExposureGroup(samples);
+    overlay.traverse((o) => o.layers.set(1));
+    this.analysisRoot.add(overlay);
+    return { fraction: exposureFraction(samples), sampleCount: samples.length };
+  }
+
+  public clearRouteExposureOverlay(): void {
+    this.analysisRoot.clear();
   }
 
   public removeFeature(id: string): void {

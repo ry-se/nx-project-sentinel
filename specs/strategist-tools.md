@@ -618,6 +618,32 @@ uses runs unchanged — `updatePreview()`'s live-aim branch is shared between bo
 Status/HUD text always names the observer unit ("COUNTER-VIEWSHED from OP HAWK locked —
 green = seen by them...") — Gate 5 (state whose eye the analysis is from).
 
+## Route exposure (`elevationProfile.ts`, `planFeature.ts`) — Wave 4, M2
+
+"How exposed is this approach" samples a selected path (todo 29's path-selection UI) at
+fixed spacing and, for each sample, checks line-of-sight from a picked threat unit's
+position via `raycastLosBlockingHit` (`planFeature.ts`) — the SAME raycast primitive
+`buildLosGroup` (the `los` tool) uses, extracted once so both call sites read from one
+implementation. `buildLosGroup` itself was refactored to call `raycastLosBlockingHit`
+internally rather than duplicating the raycast setup — its own tests
+(`strategist.planFeature.test.ts`) confirm this refactor didn't change its behavior.
+
+`sampleRouteExposure(points, threatEye, raycaster, tiles, spacingM)` returns per-sample
+`visibleToThreat: boolean`. `buildRouteExposureGroup` renders the path as alternating
+red/green bands (`planFeature.ts`'s `buildBandSegment`, the same technique
+`buildAxisGroup` uses) — **the color convention is INVERTED from `buildLosGroup`'s own
+framing**: there, "clear" (unobstructed) is green because it means "you can see the
+target"; here, unobstructed (visible-to-threat) is red because it means "the threat can
+see YOU here". Same raycast primitive, opposite meaning, because the two tools answer
+different questions. `exposureFraction` is the Gate-5 summary number; the UI states which
+threat unit it was computed from and the sample spacing.
+
+Rendered into `StrategistController.analysisRoot` — a separate transient-overlay Group
+from `previewRoot` (which the draft/tool-switch flow clears constantly) — so the exposure
+overlay persists while the user inspects it rather than vanishing on the next unrelated
+interaction. Cleared explicitly (`clearRouteExposureOverlay`) or by `clearAll()`. Not
+persisted as a `PlanFeature` — re-derived live, same pattern as M1's elevation profile.
+
 ## Invariants (do not regress)
 
 - Strategist overlay features render on layer 1 and MUST stay out of the viewshed depth

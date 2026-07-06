@@ -1,7 +1,13 @@
-import { type Object3D, type Raycaster, Vector3 } from 'three';
+import { Group, type Object3D, type Raycaster, Vector3 } from 'three';
 
 import { groundWalkEyeY } from './groundWalk';
-import { pathLength } from './planFeature';
+import {
+  buildBandSegment,
+  type LocalPoint,
+  pathLength,
+  raycastLosBlockingHit,
+  toLocalPoint,
+} from './planFeature';
 
 /** Sample spacing along a path (metres) — a named constant, not a magic literal at the
  * call site (Wave-4 invariant, same convention as `briefPlayback.ts`'s
@@ -101,4 +107,79 @@ export function estimateMoveTimeMinutes(pathLengthM: number, rate: MoveRate): nu
   const rateKmh = MOVE_RATES_KMH[rate];
   const lengthKm = pathLengthM / 1000;
   return (lengthKm / rateKmh) * 60;
+}
+
+// ---------- route exposure (todo 31 / M2) ----------
+
+export interface ExposureSample {
+  distanceAlongM: number;
+  point: LocalPoint;
+  /** `true` when the threat's raycast reaches this point unobstructed — i.e. the
+   * point is EXPOSED (visible to the threat), not safe. */
+  visibleToThreat: boolean;
+}
+
+/**
+ * Samples `points` (a path's local-frame polyline) at fixed `spacingM` and, for each
+ * sample, checks line-of-sight from `threatEye` via `raycastLosBlockingHit` — the EXACT
+ * same raycast primitive `buildLosGroup` (the `los` tool) already uses, so this can never
+ * silently drift from that implementation. `threatEye` is expected to already be the
+ * threat unit's GROUND position (eye-height lift happens inside
+ * `raycastLosBlockingHit`, same as every other LOS call site).
+ */
+export function sampleRouteExposure(
+  points: Vector3[],
+  threatEye: Vector3,
+  raycaster: Raycaster,
+  tiles: Object3D,
+  spacingM: number = ELEVATION_SAMPLE_SPACING_M
+): ExposureSample[] {
+  if (points.length < 2 || spacingM <= 0) return [];
+  const totalLength = pathLength(points);
+  if (totalLength <= 0) return [];
+
+  const distances: number[] = [];
+  for (let d = 0; d < totalLength; d += spacingM) distances.push(d);
+  if (distances[distances.length - 1] !== totalLength) distances.push(totalLength);
+
+  const samples: ExposureSample[] = [];
+  for (const d of distances) {
+    const point = pointAtDistance(points, d, totalLength);
+    if (!point) continue;
+    const blocked = raycastLosBlockingHit(threatEye, point, raycaster, tiles) !== null;
+    samples.push({ distanceAlongM: d, point: toLocalPoint(point), visibleToThreat: !blocked });
+  }
+  return samples;
+}
+
+/** Fraction (0-1) of samples visible to the threat — the Gate-5 summary number. */
+export function exposureFraction(samples: ExposureSample[]): number {
+  if (samples.length === 0) return 0;
+  return samples.filter((s) => s.visibleToThreat).length / samples.length;
+}
+
+const EXPOSED_COLOR = 0xef5350;
+const COVERED_COLOR = 0x66ff66;
+
+/**
+ * Renders the path as alternating red (exposed)/green (covered) segments — reuses
+ * `buildAxisGroup`'s per-segment `buildBandSegment` band technique, just re-colored per
+ * sample instead of one fixed axis color. NOTE the inverted framing vs. `buildLosGroup`'s
+ * own clear/blocked convention: there, "clear" (unobstructed) renders GREEN because clear
+ * means "you can see the target". Here, unobstructed (visible-to-threat) is BAD, so it
+ * renders RED — same raycast primitive, opposite color meaning, because the two tools
+ * answer different questions ("can I see it" vs. "can the threat see ME here").
+ */
+export function buildRouteExposureGroup(samples: ExposureSample[]): Group {
+  const g = new Group();
+  for (let i = 1; i < samples.length; i++) {
+    const prev = samples[i - 1].point;
+    const curr = samples[i].point;
+    const a = new Vector3(prev.x, prev.y, prev.z);
+    const b = new Vector3(curr.x, curr.y, curr.z);
+    const color = samples[i].visibleToThreat ? EXPOSED_COLOR : COVERED_COLOR;
+    const band = buildBandSegment(a, b, 3, color);
+    if (band) g.add(band);
+  }
+  return g;
 }

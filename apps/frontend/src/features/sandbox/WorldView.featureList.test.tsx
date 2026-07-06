@@ -52,6 +52,8 @@ const fakeSandbox: Partial<Sandbox> = {
   isPathFeature: vi.fn(() => false),
   getElevationProfile: vi.fn(() => null),
   getMoveTimeMinutes: vi.fn(() => null),
+  runRouteExposure: vi.fn(() => null),
+  clearRouteExposureOverlay: vi.fn(),
   listViewpoints: vi.fn(() => []),
   getBriefPlaybackState: vi.fn(() => ({ currentIndex: 0, isPlaying: false })),
   setViewpointPhase: vi.fn(),

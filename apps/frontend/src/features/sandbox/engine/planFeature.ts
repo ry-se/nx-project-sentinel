@@ -307,8 +307,15 @@ export function buildLinearMeasureGroup(
 
 /** A flat translucent quad spanning `a`→`b`, offset perpendicular in the XZ plane by
  * `halfWidth` — built from explicit world-space triangles (not a rotated PlaneGeometry) so
- * there's no rotation-order math to get wrong for an arbitrary XZ heading. */
-function buildBandSegment(a: Vector3, b: Vector3, halfWidth: number, color: number): Mesh | null {
+ * there's no rotation-order math to get wrong for an arbitrary XZ heading. Exported for
+ * reuse by todo 31 (Wave 4 M2 route-exposure overlay), which needs the SAME per-segment
+ * band technique `buildAxisGroup` uses, just re-colored per segment. */
+export function buildBandSegment(
+  a: Vector3,
+  b: Vector3,
+  halfWidth: number,
+  color: number
+): Mesh | null {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dz);
@@ -431,6 +438,29 @@ export interface LosBuildResult {
   blockedAtM?: number;
 }
 
+/** What a LOS raycast between two eye-height-lifted points finds — `null` when clear. The
+ * one raycast implementation `buildLosGroup` (this tool's rendering) and
+ * `sampleRouteExposure` (todo 31 — Wave 4 M2, a path's per-point exposure to a threat)
+ * both read from, so neither can silently drift from the other. */
+export function raycastLosBlockingHit(
+  obsGround: Vector3,
+  tgtGround: Vector3,
+  raycaster: Raycaster,
+  tiles: Object3D
+): { point: Vector3; distance: number } | null {
+  const obs = obsGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
+  const tgt = tgtGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
+  const dir = tgt.clone().sub(obs);
+  const dist = dir.length();
+  if (dist < 1e-6) return null;
+  dir.normalize();
+
+  raycaster.set(obs, dir);
+  raycaster.far = dist - 2;
+  const hits = raycaster.intersectObject(tiles, true);
+  return hits.length > 0 ? { point: hits[0].point, distance: hits[0].distance } : null;
+}
+
 /** Raycast obs→tgt against the photogrammetry mesh; green/red split if a building blocks. */
 export function buildLosGroup(
   obsGround: Vector3,
@@ -442,15 +472,9 @@ export function buildLosGroup(
 ): LosBuildResult {
   const obs = obsGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
   const tgt = tgtGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
-  const dir = tgt.clone().sub(obs);
-  const dist = dir.length();
-  dir.normalize();
+  const dist = obs.distanceTo(tgt);
   const bearing = computeBearingDeg(obsGround, tgtGround, geoFrame);
-
-  raycaster.set(obs, dir);
-  raycaster.far = dist - 2;
-  const hits = raycaster.intersectObject(tiles, true);
-  const blockedHit = hits.length > 0 ? hits[0] : null;
+  const blockedHit = raycastLosBlockingHit(obsGround, tgtGround, raycaster, tiles);
 
   const g = new Group();
   g.add(marker(obs, 0xffffff));

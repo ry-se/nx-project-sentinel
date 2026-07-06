@@ -101,6 +101,8 @@ const fakeSandbox: Partial<Sandbox> = {
   isPathFeature: vi.fn(() => false),
   getElevationProfile: vi.fn(() => null),
   getMoveTimeMinutes: vi.fn(() => null),
+  runRouteExposure: vi.fn(() => null),
+  clearRouteExposureOverlay: vi.fn(),
   switchVehicle: vi.fn(),
   setLabelsVisible: vi.fn(),
   getCameraPose: vi.fn(() => ({

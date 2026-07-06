@@ -556,6 +556,32 @@ export function WorldView() {
     }
   }, [elevationProfile]);
 
+  // ---------- route exposure (Wave 4, todo 31 — M2) ----------
+
+  const [exposureThreatId, setExposureThreatId] = useState<string>('');
+  const [exposureResult, setExposureResult] = useState<{
+    fraction: number;
+    sampleCount: number;
+  } | null>(null);
+
+  const runExposure = useCallback(() => {
+    if (!analyzedFeatureId || !exposureThreatId) return;
+    const result = sandboxRef.current?.runRouteExposure(analyzedFeatureId, exposureThreatId);
+    setExposureResult(result ?? null);
+  }, [analyzedFeatureId, exposureThreatId]);
+
+  const clearExposure = useCallback(() => {
+    sandboxRef.current?.clearRouteExposureOverlay();
+    setExposureResult(null);
+  }, []);
+
+  // Re-running the exposure check when the analyzed feature changes would show a stale
+  // overlay for the WRONG path — clear it instead of leaving a mismatched result visible.
+  useEffect(() => {
+    setExposureResult(null);
+    sandboxRef.current?.clearRouteExposureOverlay();
+  }, [analyzedFeatureId]);
+
   // Live camera-pose readout (lon/lat/alt/heading) — this is the metadata a
   // real drone would embed; copy it whenever you take a screenshot.
   useEffect(() => {
@@ -1225,6 +1251,56 @@ export function WorldView() {
                     (assumed {moveRate} rate — {MOVE_RATES_KMH[moveRate]} km/h)
                   </span>
                 </div>
+              )}
+              {features.some((f) => f.type === 'unit') && (
+                <>
+                  <div className="divider my-0" />
+                  <label className="flex flex-col gap-0.5 px-2 text-[10px] uppercase tracking-widest text-base-content/40">
+                    Threat unit
+                    <select
+                      className="select select-bordered select-xs font-normal normal-case"
+                      value={exposureThreatId}
+                      onChange={(e) => setExposureThreatId(e.target.value)}
+                    >
+                      <option value="">— select —</option>
+                      {features
+                        .filter((f) => f.type === 'unit')
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <div className="flex gap-1 px-2 pb-1 pt-1">
+                    <button
+                      className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
+                      onClick={runExposure}
+                      disabled={!exposureThreatId}
+                    >
+                      Run Exposure
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      onClick={clearExposure}
+                      aria-label="Clear exposure overlay"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {exposureResult && (
+                    <div className="px-2 pb-1 text-xs">
+                      <strong>{(exposureResult.fraction * 100).toFixed(0)}%</strong> of route
+                      exposed{' '}
+                      <span className="text-[9px] text-base-content/40">
+                        (computed from {features.find((f) => f.id === exposureThreatId)?.name}'s
+                        position,
+                        {exposureResult.sampleCount} samples every {ELEVATION_SAMPLE_SPACING_M}
+                        m)
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </PanelSection>
           )}

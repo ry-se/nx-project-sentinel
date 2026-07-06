@@ -173,6 +173,11 @@ export interface Sandbox {
   isPathFeature(featureId: string): boolean;
   getElevationProfile(featureId: string): ElevationSample[] | null;
   getMoveTimeMinutes(featureId: string, rate: MoveRate): number | null;
+  runRouteExposure(
+    featureId: string,
+    threatFeatureId: string
+  ): { fraction: number; sampleCount: number } | null;
+  clearRouteExposureOverlay(): void;
   setClassification(level: ClassificationLevel): void;
   getClassification(): ClassificationLevel;
   setOperatorName(name: string): void;
@@ -913,6 +918,9 @@ export function createSandbox(
     isPathFeature: (featureId) => strategist.isPathFeature(featureId),
     getElevationProfile: (featureId) => strategist.computeElevationProfile(featureId),
     getMoveTimeMinutes: (featureId, rate) => strategist.computeMoveTimeMinutes(featureId, rate),
+    runRouteExposure: (featureId, threatFeatureId) =>
+      strategist.runRouteExposure(featureId, threatFeatureId),
+    clearRouteExposureOverlay: () => strategist.clearRouteExposureOverlay(),
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;
