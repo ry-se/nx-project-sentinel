@@ -71,6 +71,7 @@ export type StratTool =
   | 'arc'
   | 'los'
   | 'viewshed'
+  | 'counterViewshed'
   | 'boundary'
   | 'phaseline'
   | 'loa'
@@ -78,6 +79,36 @@ export type StratTool =
   | 'objective'
   | 'symbol'
   | 'groundWalk';
+
+/** Max distance (metres) a `counterViewshed` click may be from a placed unit to pick it
+ * as the observer (todo 30) — generous enough for an imprecise click, tight enough that a
+ * click nowhere near any unit visibly does nothing rather than silently picking the wrong
+ * one. */
+const COUNTER_VIEWSHED_PICK_RADIUS_M = 40;
+
+/** Finds the nearest `unit`-type feature to `point` within `maxDistM`, or `null` if none
+ * qualifies (todo 30) — pure function of the exported feature list, independently
+ * testable without a live controller/raycaster. Any affiliation is selectable (enemy is
+ * the doctrinal counter-viewshed use case, but a friendly self-check is also legitimate). */
+export function findNearestUnit(
+  features: PlanFeature[],
+  point: Vector3,
+  maxDistM: number
+): PlanFeature | null {
+  let nearest: PlanFeature | null = null;
+  let nearestDist = Infinity;
+  for (const pf of features) {
+    if (pf.type !== 'unit') continue;
+    const p = pf.points.local[0];
+    if (!p) continue;
+    const dist = point.distanceTo(new Vector3(p.x, p.y, p.z));
+    if (dist <= maxDistM && dist < nearestDist) {
+      nearest = pf;
+      nearestDist = dist;
+    }
+  }
+  return nearest;
+}
 
 const LINEAR_MEASURE_TOOLS: LinearMeasureType[] = ['boundary', 'phaseline', 'loa'];
 const LINEAR_MEASURE_NAME_PREFIX: Record<LinearMeasureType, string> = {
@@ -111,6 +142,8 @@ export const TOOL_HINTS: Record<StratTool, string> = {
   arc: 'FIRE ARC — click ① weapon ② max-range point ③ end bearing',
   los: 'LINE OF SIGHT — click observer, then target. Buildings block the ray.',
   viewshed: 'VIEWSHED — click observer, aim with mouse (green = seen, red = hidden), click to lock',
+  counterViewshed:
+    'COUNTER-VIEWSHED — click a PLACED UNIT to use as the observer, aim with mouse, click to lock',
   boundary: 'BOUNDARY — click waypoints, right-click to finish',
   phaseline: 'PHASE LINE — click waypoints, right-click to finish',
   loa: 'LIMIT OF ADVANCE — click waypoints, right-click to finish',
@@ -192,6 +225,7 @@ export class StrategistController {
   private timelineStepper = new TimelineStepper(() => this.phases.length);
   private rehearsing = false;
   private pendingPhasePosition: { featureId: string; phaseId: string } | null = null;
+  private counterViewshedUnitName: string | null = null;
   private groundWalkController = new GroundWalkController();
   private lastUpdateMs: number | null = null;
   private featureRoot = new Group();
@@ -941,7 +975,22 @@ export class StrategistController {
 
   // ---------- drafting ----------
 
-  private place(p: Vector3): void {
+  private place(rawPoint: Vector3): void {
+    let p = rawPoint;
+    if (this.tool === 'counterViewshed' && this.draft.length === 0) {
+      const observer = findNearestUnit(
+        this.exportFeatures(),
+        rawPoint,
+        COUNTER_VIEWSHED_PICK_RADIUS_M
+      );
+      if (!observer) {
+        this.onStatus('COUNTER-VIEWSHED — click closer to a placed unit');
+        return;
+      }
+      this.counterViewshedUnitName = observer.name;
+      const unitPoint = observer.points.local[0];
+      p = new Vector3(unitPoint.x, unitPoint.y, unitPoint.z);
+    }
     this.draft.push(p);
 
     switch (this.tool) {
@@ -969,6 +1018,20 @@ export class StrategistController {
           this.previewRoot.clear();
         } else {
           this.onStatus('VIEWSHED — sweep the mouse to aim, click to lock');
+        }
+        break;
+      case 'counterViewshed':
+        if (this.draft.length === 2) {
+          this.viewshed.aim(this.draft[0], this.draft[1]);
+          this.onStatus(
+            `COUNTER-VIEWSHED from ${this.counterViewshedUnitName} locked — green = seen by them, red = hidden from them. Clear All to remove.`
+          );
+          this.draft = [];
+          this.previewRoot.clear();
+        } else {
+          this.onStatus(
+            `COUNTER-VIEWSHED from ${this.counterViewshedUnitName} — sweep the mouse to aim, click to lock`
+          );
         }
         break;
       case 'axis':
@@ -1006,6 +1069,7 @@ export class StrategistController {
     this.hover = null;
     this.previewRoot.clear();
     this.pendingPhasePosition = null;
+    this.counterViewshedUnitName = null;
     this.onStatus(TOOL_HINTS[this.tool]);
   }
 
@@ -1027,8 +1091,9 @@ export class StrategistController {
       return;
     }
 
-    if (this.tool === 'viewshed') {
-      // live aim — the whole mesh repaints as you sweep
+    if (this.tool === 'viewshed' || this.tool === 'counterViewshed') {
+      // live aim — the whole mesh repaints as you sweep (counterViewshed's observer was
+      // already snapped to the picked unit's position back in `place()`).
       if (this.draft.length === 1 && this.hover) {
         this.viewshed.aim(this.draft[0], this.hover);
       }

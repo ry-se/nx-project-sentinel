@@ -604,6 +604,20 @@ Tunables (`constants/engine.ts` `VIEWSHED`): `DEPTH_RES 2048`, `H_FOV_DEG 100`,
 `V_FOV_DEG 55`, `FAR_PLANE 1000`, `DEPTH_MIN 20`. Only one viewshed is active at a time;
 `disable()` clears it.
 
+## Counter-viewshed (`strategist.ts`) — Wave 4, C3
+
+"What can THEY see of me" is the SAME `ViewshedController` above, from a different
+observer — `counterViewshed` is a `StratTool`, not a second visibility implementation.
+`findNearestUnit(features, point, maxDistM)` (pure, exported from `strategist.ts`) picks
+the nearest placed `unit`-type feature to the first click (any affiliation — enemy is the
+doctrinal use case, not enforced); if nothing is within `COUNTER_VIEWSHED_PICK_RADIUS_M`
+(40m), the click is a no-op with a "click closer to a placed unit" status rather than a
+silent wrong-pick. The picked unit's position replaces the raw click point in `place()`,
+then the exact same aim-with-mouse-then-click-to-lock flow the `viewshed` tool already
+uses runs unchanged — `updatePreview()`'s live-aim branch is shared between both tools.
+Status/HUD text always names the observer unit ("COUNTER-VIEWSHED from OP HAWK locked —
+green = seen by them...") — Gate 5 (state whose eye the analysis is from).
+
 ## Invariants (do not regress)
 
 - Strategist overlay features render on layer 1 and MUST stay out of the viewshed depth
