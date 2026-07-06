@@ -64,6 +64,20 @@ describe('unitSymbol — affiliation color + echelon ticks', () => {
       echelon: 'brigade',
     });
   });
+
+  it('regression: an Object.prototype-inherited key does NOT pass the affiliation whitelist', () => {
+    // The whitelist check must use hasOwnProperty, not `in` (which walks the prototype
+    // chain) — "toString"/"constructor" are `in` any plain object but are not real
+    // affiliations. Security-review finding, Wave 4.
+    expect(readUnitMetadata({ affiliation: 'toString' })).toEqual({
+      affiliation: 'friendly',
+      echelon: 'platoon',
+    });
+    expect(readUnitMetadata({ affiliation: 'constructor' })).toEqual({
+      affiliation: 'friendly',
+      echelon: 'platoon',
+    });
+  });
 });
 
 describe('unit symbol — serializeFeature/rebuildFeature round-trip (todo 14)', () => {

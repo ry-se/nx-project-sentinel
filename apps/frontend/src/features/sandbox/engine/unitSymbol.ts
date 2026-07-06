@@ -55,7 +55,15 @@ export function readUnitMetadata(metadata: Record<string, unknown>): UnitMetadat
   const affiliation = metadata.affiliation as Affiliation | undefined;
   const echelon = metadata.echelon as Echelon | undefined;
   return {
-    affiliation: affiliation && affiliation in AFFILIATION_COLOR ? affiliation : 'friendly',
+    // `hasOwnProperty`, NOT the `in` operator — `in` walks the prototype chain, so a
+    // corrupted `affiliation` equal to a JS built-in key ("toString", "constructor", ...)
+    // would otherwise pass this whitelist and resolve to an inherited function instead of
+    // a real color (security-review finding, Wave 4 — same bug class as
+    // `planFeature.ts`'s `readRangeFanSystemId`, fixed together).
+    affiliation:
+      affiliation && Object.prototype.hasOwnProperty.call(AFFILIATION_COLOR, affiliation)
+        ? affiliation
+        : 'friendly',
     echelon: echelon && ECHELON_ORDER.includes(echelon) ? echelon : 'platoon',
   };
 }

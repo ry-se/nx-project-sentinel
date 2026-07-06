@@ -87,6 +87,15 @@ describe('readRangeFanSystemId (defensive fallback)', () => {
     expect(readRangeFanSystemId({})).toBe('mortar81mm');
     expect(readRangeFanSystemId({ systemId: 'nonexistentSystem' })).toBe('mortar81mm');
   });
+
+  it('regression: an Object.prototype-inherited key does NOT pass the systemId whitelist', () => {
+    // The whitelist check must use hasOwnProperty, not `in` (which walks the prototype
+    // chain) — "toString"/"constructor" are `in` any plain object but are not real
+    // systemIds. Security-review finding, Wave 4 (same class as unitSymbol.ts's
+    // readUnitMetadata, fixed together).
+    expect(readRangeFanSystemId({ systemId: 'toString' })).toBe('mortar81mm');
+    expect(readRangeFanSystemId({ systemId: 'constructor' })).toBe('mortar81mm');
+  });
 });
 
 describe('buildRangeFanGroup', () => {

@@ -442,7 +442,14 @@ const DEFAULT_SYSTEM_ID: SystemId = 'mortar81mm';
  * hand-edited/older saved data. */
 export function readRangeFanSystemId(metadata: Record<string, unknown>): SystemId {
   const systemId = metadata.systemId as SystemId | undefined;
-  return systemId && systemId in WEAPON_SYSTEMS ? systemId : DEFAULT_SYSTEM_ID;
+  // `hasOwnProperty`, NOT the `in` operator — `in` walks the prototype chain, so a
+  // corrupted/hand-edited `systemId` equal to a JS built-in key ("toString",
+  // "constructor", ...) would otherwise pass this whitelist and resolve to an
+  // inherited function instead of a real system, crashing the render with
+  // `undefined.toFixed` (security-review finding, Wave 4).
+  return systemId && Object.prototype.hasOwnProperty.call(WEAPON_SYSTEMS, systemId)
+    ? systemId
+    : DEFAULT_SYSTEM_ID;
 }
 
 /** A weapon/sensor's min/max range as an annulus (a ring, not a solid wedge — a system
