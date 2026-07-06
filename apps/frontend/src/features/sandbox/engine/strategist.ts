@@ -23,6 +23,7 @@ import {
   buildLinearMeasureGroup,
   buildLosGroup,
   buildObjectiveGroup,
+  buildRangeFanGroup,
   fmtArea,
   fmtDist,
   isFeatureVisibleForPhase,
@@ -32,6 +33,7 @@ import {
   pathLength,
   type PlanFeature,
   type PlanFeatureType,
+  readRangeFanSystemId,
   rebuildFeature,
   resolveFeaturePhase,
   serializeFeature,
@@ -46,6 +48,7 @@ import {
   ECHELON_ABBR,
   repositionUnitSymbolGroup,
 } from './unitSymbol';
+import { type SystemId, WEAPON_SYSTEMS } from './weaponSystems';
 import type { ViewshedController } from './viewshed';
 import { BriefPlaybackStepper } from './briefPlayback';
 import {
@@ -81,6 +84,7 @@ export type StratTool =
   | 'axis'
   | 'objective'
   | 'symbol'
+  | 'rangeFan'
   | 'groundWalk';
 
 /** Max distance (metres) a `counterViewshed` click may be from a placed unit to pick it
@@ -153,6 +157,7 @@ export const TOOL_HINTS: Record<StratTool, string> = {
   axis: 'AXIS OF ADVANCE — click waypoints, right-click to finish (arrow points last→first)',
   objective: 'OBJECTIVE — click to place',
   symbol: 'UNIT SYMBOL — click to place (set affiliation/echelon in the panel first)',
+  rangeFan: 'RANGE FAN — click ① gun position ② bearing (set the system in the panel first)',
   groundWalk:
     'GROUND WALK — click to drop to eye height. Drag: look. WASD/arrows: move. Escape: exit.',
 };
@@ -201,6 +206,9 @@ export class StrategistController {
    * UI's selector, not per-placement (todo 14). */
   public unitAffiliation: Affiliation = 'friendly';
   public unitEchelon: Echelon = 'platoon';
+  /** System applied to the NEXT placed `rangeFan` — set via the strategist UI's system
+   * selector, not per-placement (todo 32, mirrors `unitAffiliation`/`unitEchelon`). */
+  public rangeFanSystemId: SystemId = 'mortar81mm';
   /** Toggles the MGRS cursor readout in the strategist HUD (todo 15). */
   public mgrsHudEnabled = true;
   /** Author name stamped into each feature's provenance at draw time — a simple settable
@@ -766,6 +774,15 @@ export class StrategistController {
     return this.pathPoints(featureId) !== null;
   }
 
+  /** The system a placed range fan is tagged to (todo 32) — `null` for a non-`rangeFan`
+   * feature. Validated against the CURRENT table, same defensive pattern as
+   * `getFeaturePhase`. */
+  public getRangeFanSystemId(featureId: string): SystemId | null {
+    const f = this.features.find((f) => f.id === featureId);
+    if (f?.planFeature.type !== 'rangeFan') return null;
+    return readRangeFanSystemId(f.planFeature.metadata);
+  }
+
   /** M1 — elevation profile + slope along a selected path (todo 29). `null` when the
    * feature isn't a path type. */
   public computeElevationProfile(featureId: string, spacingM?: number): ElevationSample[] | null {
@@ -1080,6 +1097,10 @@ export class StrategistController {
       case 'symbol':
         this.finalizeSymbol();
         break;
+      case 'rangeFan':
+        if (this.draft.length === 2) this.finalizeRangeFan();
+        else this.onStatus('RANGE FAN — now click the bearing point');
+        break;
       case 'groundWalk':
         this.enterGroundWalkAt(this.draft[this.draft.length - 1]);
         break;
@@ -1266,6 +1287,24 @@ export class StrategistController {
     });
     this.addFeature(pf, g);
     this.onStatus(`Unit placed: ${name}`);
+  }
+
+  private finalizeRangeFan(): void {
+    const pts = [...this.draft];
+    const systemId = this.rangeFanSystemId;
+    const system = WEAPON_SYSTEMS[systemId];
+    const name =
+      window.prompt('Name this range fan:', `${system.name} ${this.countOfType('rangeFan') + 1}`) ??
+      system.name;
+    const g = buildRangeFanGroup(pts, systemId, this.geoFrame);
+    const pf = serializeFeature('rangeFan', pts, name, this.geoFrame, {
+      systemId,
+      ...this.provenanceMetadata(),
+    });
+    this.addFeature(pf, g);
+    this.onStatus(
+      `${system.name} placed: ${fmtDist(system.minRangeM)}–${fmtDist(system.maxRangeM)} (geometric range only)`
+    );
   }
 
   // ---------- ground walk (todo 21) ----------

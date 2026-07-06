@@ -1,6 +1,11 @@
 import type { ClassificationLevel, Provenance } from './classification';
 import type { GeoPosition } from './geoFrame';
-import { ALL_PHASES, type PlanFeature, type PlanFeatureType } from './planFeature';
+import {
+  ALL_PHASES,
+  type PlanFeature,
+  type PlanFeatureType,
+  readRangeFanSystemId,
+} from './planFeature';
 import type { Affiliation, Echelon } from './unitSymbol';
 
 /** What export needs from a `Plan` (`planStore.ts`) — deliberately narrower than the full
@@ -24,7 +29,10 @@ type GeoJSONGeometryType = 'Point' | 'LineString' | 'Polygon';
  * documents as "a later-wave refinement" does not exist yet, so `objective` maps to Point, not
  * Polygon. Every other type draws an open path (`arc`'s 3 points are center/radius/bearing
  * CONTROL points, not a swept wedge boundary — exported as the raw control-point path, per
- * invariant 1's "no re-projection"). */
+ * invariant 1's "no re-projection"). `rangeFan` (todo 32) follows the SAME control-point
+ * convention as `arc`: its 2 points (center, bearing) are exported as the raw path, NOT the
+ * rendered annulus ring — reconstructing a true ring/hole GeoJSON Polygon from a system's
+ * min/max range is out of this todo's scope (Wave 4 depth, not the export pipeline). */
 const GEOMETRY_TYPE: Record<PlanFeatureType, GeoJSONGeometryType> = {
   distance: 'LineString',
   focus: 'Polygon',
@@ -36,6 +44,7 @@ const GEOMETRY_TYPE: Record<PlanFeatureType, GeoJSONGeometryType> = {
   axis: 'LineString',
   objective: 'Point',
   unit: 'Point',
+  rangeFan: 'LineString',
 };
 
 type Coord3 = [number, number, number];
@@ -79,6 +88,9 @@ function featureProperties(
   if (pf.type === 'unit') {
     props.affiliation = pf.metadata.affiliation as Affiliation | undefined;
     props.echelon = pf.metadata.echelon as Echelon | undefined;
+  }
+  if (pf.type === 'rangeFan') {
+    props.systemId = readRangeFanSystemId(pf.metadata);
   }
   return props;
 }

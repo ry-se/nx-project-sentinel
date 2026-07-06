@@ -50,6 +50,8 @@ const fakeSandbox: Partial<Sandbox> = {
   selectFeature: vi.fn(),
   setUnitAffiliation: vi.fn(),
   setUnitEchelon: vi.fn(),
+  setRangeFanSystem: vi.fn(),
+  getRangeFanSystemId: vi.fn(() => null),
   setMgrsHudEnabled: vi.fn(),
   savePlan: vi.fn(),
   loadPlan: vi.fn(),

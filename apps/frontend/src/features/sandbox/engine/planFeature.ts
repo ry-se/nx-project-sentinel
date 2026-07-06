@@ -13,6 +13,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Object3D,
+  Path,
   Raycaster,
   Shape,
   ShapeGeometry,
@@ -24,6 +25,7 @@ import {
 
 import type { GeoFrame, GeoPosition } from './geoFrame';
 import { buildUnitSymbolGroup, readUnitMetadata } from './unitSymbol';
+import { type SystemId, WEAPON_SYSTEMS } from './weaponSystems';
 
 /** A JSON-safe stand-in for a Three.js `Vector3` — the shape every `PlanFeature` persists. */
 export interface LocalPoint {
@@ -42,7 +44,8 @@ export type PlanFeatureType =
   | 'loa'
   | 'axis'
   | 'objective'
-  | 'unit';
+  | 'unit'
+  | 'rangeFan';
 
 /**
  * The single serializable representation every strategist plan feature flows through —
@@ -429,6 +432,65 @@ export function buildObjectiveGroup(pts: Vector3[], name: string): Group {
   return g;
 }
 
+// ---------- weapon/sensor range fans (todo 32 / C1) ----------
+
+const RANGE_FAN_COLOR = 0xff8a65;
+const DEFAULT_SYSTEM_ID: SystemId = 'mortar81mm';
+
+/** Reads `metadata.systemId`, defensively falling back to a default system for
+ * missing/unknown ids — the same pattern `unitSymbol.ts`'s `readUnitMetadata` uses for
+ * hand-edited/older saved data. */
+export function readRangeFanSystemId(metadata: Record<string, unknown>): SystemId {
+  const systemId = metadata.systemId as SystemId | undefined;
+  return systemId && systemId in WEAPON_SYSTEMS ? systemId : DEFAULT_SYSTEM_ID;
+}
+
+/** A weapon/sensor's min/max range as an annulus (a ring, not a solid wedge — a system
+ * usually can't engage inside its own minimum range), read from `WEAPON_SYSTEMS` at
+ * RENDER time (invariant 2 — never a value baked into the persisted feature, so a future
+ * table correction re-renders every saved plan correctly). `pts` is `[center, bearingPt]`
+ * — `bearingPt` only labels the fan's facing today (every system in the table is a full
+ * 360° fan); a doctrinal engagement arc is a documented future refinement, not
+ * implemented here (no system in `WEAPON_SYSTEMS` currently needs one). */
+export function buildRangeFanGroup(pts: Vector3[], systemId: SystemId, geoFrame: GeoFrame): Group {
+  const [center, bearingPt] = pts;
+  const system = WEAPON_SYSTEMS[systemId];
+
+  const shape = new Shape();
+  shape.absarc(0, 0, system.maxRangeM, 0, Math.PI * 2, false);
+  if (system.minRangeM > 0) {
+    const hole = new Path();
+    hole.absarc(0, 0, system.minRangeM, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+  }
+
+  const geo = new ShapeGeometry(shape, 64);
+  geo.rotateX(-Math.PI / 2);
+  const mesh = new Mesh(
+    geo,
+    new MeshBasicMaterial({
+      color: RANGE_FAN_COLOR,
+      transparent: true,
+      opacity: 0.18,
+      side: DoubleSide,
+      depthWrite: false,
+    })
+  );
+  mesh.position.set(center.x, center.y + 1, center.z);
+
+  const bearing = computeBearingDeg(center, bearingPt, geoFrame);
+  const g = new Group();
+  g.add(mesh);
+  g.add(marker(center, RANGE_FAN_COLOR, 2));
+  g.add(
+    label(
+      center.clone().add(new Vector3(0, 20, 0)),
+      `${system.name} · ${fmtDist(system.minRangeM)}–${fmtDist(system.maxRangeM)} · ${formatBearing(bearing)}\n(geometric range only — no terrain masking)`
+    )
+  );
+  return g;
+}
+
 export interface LosBuildResult {
   group: Group;
   blocked: boolean;
@@ -613,6 +675,8 @@ export function rebuildFeature(pf: PlanFeature, ctx: RebuildContext): Group {
       const { affiliation, echelon } = readUnitMetadata(pf.metadata);
       return buildUnitSymbolGroup(pts[0], affiliation, echelon, pf.name);
     }
+    case 'rangeFan':
+      return buildRangeFanGroup(pts, readRangeFanSystemId(pf.metadata), ctx.geoFrame);
     default: {
       const exhaustive: never = pf.type;
       throw new Error(`rebuildFeature: unknown PlanFeature type ${exhaustive as string}`);

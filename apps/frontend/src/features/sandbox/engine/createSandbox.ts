@@ -28,6 +28,7 @@ import {
 import type { ElevationSample, MoveRate } from './elevationProfile';
 import { type FeatureSummary, StrategistController, type StratTool } from './strategist';
 import type { Affiliation, Echelon } from './unitSymbol';
+import type { SystemId } from './weaponSystems';
 import {
   deletePlan as deletePlanFromStore,
   listPlans as listPlansFromStore,
@@ -127,6 +128,8 @@ export interface Sandbox {
   selectFeature(id: string | null): void;
   setUnitAffiliation(affiliation: Affiliation): void;
   setUnitEchelon(echelon: Echelon): void;
+  setRangeFanSystem(systemId: SystemId): void;
+  getRangeFanSystemId(featureId: string): SystemId | null;
   setMgrsHudEnabled(enabled: boolean): void;
   savePlan(name: string): Plan;
   loadPlan(id: string): void;
@@ -835,6 +838,10 @@ export function createSandbox(
     setUnitEchelon: (echelon) => {
       strategist.unitEchelon = echelon;
     },
+    setRangeFanSystem: (systemId) => {
+      strategist.rangeFanSystemId = systemId;
+    },
+    getRangeFanSystemId: (featureId) => strategist.getRangeFanSystemId(featureId),
     setMgrsHudEnabled: (enabled) => {
       strategist.mgrsHudEnabled = enabled;
     },

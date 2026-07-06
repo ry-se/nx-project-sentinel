@@ -8,6 +8,7 @@ import {
   ChevronUp,
   Clipboard,
   Compass,
+  Crosshair,
   Eye,
   EyeOff,
   Flag,
@@ -68,6 +69,7 @@ import type { Viewpoint } from './engine/viewpoint';
 import { getStoredSpawnKey, SPAWN_LOCATIONS } from './spawnLocations';
 import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strategist';
 import type { Affiliation, Echelon } from './engine/unitSymbol';
+import { type SystemId, WEAPON_SYSTEMS } from './engine/weaponSystems';
 import type { VehicleType } from './engine/vehicles';
 import { IntelImport } from './IntelImport';
 import { PanelRail } from './ui/PanelRail';
@@ -91,6 +93,7 @@ const TOOLS: Array<{ id: StratTool; label: string; Icon: LucideIcon }> = [
   { id: 'axis', label: 'Axis of Adv.', Icon: ArrowRight },
   { id: 'objective', label: 'Objective', Icon: Flag },
   { id: 'symbol', label: 'Unit Symbol', Icon: Square },
+  { id: 'rangeFan', label: 'Range Fan', Icon: Crosshair },
   { id: 'groundWalk', label: 'Ground Walk', Icon: Footprints },
 ];
 
@@ -145,6 +148,7 @@ export function WorldView() {
   const [renameDraft, setRenameDraft] = useState('');
   const [unitAffiliation, setUnitAffiliationState] = useState<Affiliation>('friendly');
   const [unitEchelon, setUnitEchelonState] = useState<Echelon>('platoon');
+  const [rangeFanSystemId, setRangeFanSystemIdState] = useState<SystemId>('mortar81mm');
   const [mgrsHudOn, setMgrsHudOn] = useState(true);
   const [planVersion, setPlanVersion] = useState(0);
   const [planNameDraft, setPlanNameDraft] = useState('');
@@ -258,6 +262,11 @@ export function WorldView() {
   const selectUnitEchelon = useCallback((next: Echelon) => {
     setUnitEchelonState(next);
     sandboxRef.current?.setUnitEchelon(next);
+  }, []);
+
+  const selectRangeFanSystem = useCallback((next: SystemId) => {
+    setRangeFanSystemIdState(next);
+    sandboxRef.current?.setRangeFanSystem(next);
   }, []);
 
   const selectFeatureRow = useCallback((id: string) => {
@@ -711,6 +720,20 @@ export function WorldView() {
                   {ECHELONS.map((e) => (
                     <option key={e} value={e}>
                       {e}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-widest text-base-content/40">
+                Range fan system
+                <select
+                  className="select select-bordered select-xs font-normal normal-case"
+                  value={rangeFanSystemId}
+                  onChange={(e) => selectRangeFanSystem(e.target.value as SystemId)}
+                >
+                  {(Object.keys(WEAPON_SYSTEMS) as SystemId[]).map((id) => (
+                    <option key={id} value={id}>
+                      {WEAPON_SYSTEMS[id].name}
                     </option>
                   ))}
                 </select>

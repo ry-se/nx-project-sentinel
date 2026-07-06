@@ -644,6 +644,32 @@ overlay persists while the user inspects it rather than vanishing on the next un
 interaction. Cleared explicitly (`clearRouteExposureOverlay`) or by `clearAll()`. Not
 persisted as a `PlanFeature` — re-derived live, same pattern as M1's elevation profile.
 
+## Weapon/sensor range fans (`weaponSystems.ts`, `planFeature.ts`) — Wave 4, C1
+
+`WEAPON_SYSTEMS` (`weaponSystems.ts`) is a small table of representative, publicly-cited
+NATO-class system parameters (81mm mortar, medium ATGM, ground surveillance radar) — each
+entry's figure class is documented in a code comment (training/exercise use per Gate 6, not
+validated targeting data). `rangeFan` is a `PlanFeatureType` whose `points.local` are
+`[center, bearingPoint]` (the SAME control-point convention `arc` uses) and whose
+`metadata.systemId` names the table entry — the min/max radius is NEVER baked into the
+persisted feature; `buildRangeFanGroup` reads `WEAPON_SYSTEMS` at REBUILD time, so a future
+correction to the table re-renders every saved plan correctly with zero data migration.
+`readRangeFanSystemId` defensively falls back to a default system for a missing/unknown id
+(same pattern as `unitSymbol.ts`'s `readUnitMetadata`), never throwing on stale saved data.
+
+The fan renders as a min/max annulus (`Shape.absarc` for the outer boundary + a `Path` hole
+for the inner radius — extends `buildArcGroup`'s `ShapeGeometry` technique with a hole,
+rather than a new geometry method) — every system in the table today is a full 360° fan; a
+doctrinal engagement-arc sector is a documented future refinement, not implemented (no
+current system needs one). The label always states system name + min/max range AND that
+it's geometric-range-only with no terrain masking applied (Gate 5) — composing a fan with
+counter-viewshed/route-exposure to shade dead ground inside it is out of this todo's scope.
+
+`rangeFan` exports to GeoJSON/KML as a `LineString` (the raw `[center, bearingPoint]`
+control-point path) — the SAME convention `arc` already uses for its own control points,
+not a reconstructed ring polygon (invariant 1, no re-projection); `systemId` travels into
+the exported feature's properties alongside classification/provenance.
+
 ## Invariants (do not regress)
 
 - Strategist overlay features render on layer 1 and MUST stay out of the viewshed depth
