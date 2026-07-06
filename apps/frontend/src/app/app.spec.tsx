@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 
-import App from './app';
+import { App } from './app';
 
 vi.mock('../features/sandbox/WorldView', () => ({
   WorldView: () => <div data-testid="world-view-mock" />,
@@ -10,19 +10,10 @@ vi.mock('../features/sandbox/WorldView', () => ({
 describe('App', () => {
   it('should render successfully', () => {
     const { baseElement } = render(
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <App />
       </BrowserRouter>
     );
     expect(baseElement).toBeTruthy();
-  });
-
-  it('should have a greeting as the title', () => {
-    const { getAllByText } = render(
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    );
-    expect(getAllByText(new RegExp('The data returned is', 'gi')).length > 0).toBeTruthy();
   });
 });

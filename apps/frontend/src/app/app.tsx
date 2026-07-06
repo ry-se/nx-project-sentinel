@@ -1,32 +1,13 @@
-// Uncomment this line to use CSS modules
-// import styles from './app.module.css';
-import { useEffect, useState } from 'react';
+import { Route, Routes } from 'react-router-dom';
 
+import { DetectDebug } from '../features/sandbox/intel/DetectDebug';
 import { WorldView } from '../features/sandbox/WorldView';
 
 export function App() {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch('/api/');
-        const data = await res.json();
-        console.error(data);
-        setData(data.message);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    void fetchData();
-  }, []);
-
   return (
-    <div>
-      <h1>The data returned is {data}</h1>
-      <WorldView />
-    </div>
+    <Routes>
+      <Route path="/" element={<WorldView />} />
+      <Route path="/detect-debug" element={<DetectDebug />} />
+    </Routes>
   );
 }
-
-export default App;

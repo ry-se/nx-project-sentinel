@@ -1,0 +1,40 @@
+# COC Sync Marker — coc-claude-base (base lane, cc-only-legacy)
+timestamp: 2026-06-29T08:28:38Z
+source: loom/.claude
+loom_sha: e2ac475
+variant: base
+clis: [claude]
+visibility: public
+stats:
+  copied: 1058         # 20 content-equal after BUILD-internal strip, 1038 byte-equal
+  variant_only: 0
+  overlay_applied: 1   # rules/agents.md base slot — byte-equal (verify-overlays Failing:0)
+  verify_failures: 0
+  purged: 0            # all obsoleted paths already absent on base disk (base always clean)
+  obsoleted_union: 71  # .coc-obsoleted regenerated (Step 4.5 union obsoleted+use_obsoleted); unchanged this cycle
+  preserved: [CLAUDE.md, .proposals/, learning/, settings.local.json]
+  baselines_emitted:
+    cc: 0          # CLAUDE.md preserved, not emitted
+  gitignore:
+    action: replaced
+    pre_bytes: 656
+    post_bytes: 1044    # +388B: 8 per-clone trust-state entries (coordination-log.jsonl* + 7 siblings)
+note: |
+  loom@e2ac475 Gate-2 base sync (cc-only-legacy lane). DRIVING CHANGE:
+  sync-manifest.yaml::gitignore_additions gained 8 per-clone trust-state entries
+  (coordination-log.jsonl* + codify-lease.json / coordination-mode.json /
+  observations.jsonl / violations.jsonl / provenance/ / posture.json / .initialized
+  siblings). Managed .gitignore block grew 656B -> 1044B (+388B). coordination-log.jsonl*
+  confirmed at line 8 of the landed managed block.
+  CONTENT: sync-tier-aware.mjs --target base --all-templates delivered 1058 files,
+  1058/1058 verified (20 content-equal after BUILD-internal strip, 1038 byte-equal),
+  1 base slot overlay (rules/agents.md) applied byte-equal. 27 tracked rule/bin/hook/guide
+  files updated to current loom HEAD + 5 new bin/hook/skill artifacts (check-rule-injection-budget,
+  sync-from-canon-fetch + .test, actuation-types.js, prompt-caching-coc-artifacts.md).
+  SCANS: 0 swallowed artifacts (Rule-6 gate clean), 0 operator-PII in settings.json,
+  0 scripts/hooks refs, 0 residual /Users//home tokens. Hook integrity 38/38 scripts resolve,
+  24/24 ./lib/ requires resolve. .coc-obsoleted union = 71 (additive, 0 dropped).
+  CC-only (clis:[claude]) — NO Codex/Gemini emission, NO AGENTS.md/GEMINI.md/.codex/.gemini/
+  .coc/bin emission. CLAUDE.md preserved (template-owned). verify-overlays.sh base Failing:0.
+  build:null — base is stack-agnostic, NO SDK pins, NO uv sync / cargo check.
+  VERSION 2.45.5->2.45.6; loom_sha 9101e34->e2ac475; upstream loom 2.45.0 unchanged.
