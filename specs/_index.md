@@ -8,16 +8,22 @@ Forward-looking work lives in `workspaces/sentinel/02-plans/`, never here.
 Created 2026-06-30 by the harness-onboarding `/analyze` pass (the code predates the
 harness). Verified against `feat/software-revamp`.
 
-| Spec                              | Domain           | One line                                                                                                                      |
-| --------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `cop-engine-and-modes.md`         | Core engine      | The `createSandbox` orchestrator, the two modes, render loop, camera, input, UI surface, lifecycle                            |
-| `tile-streaming-and-geo.md`       | Geospatial world | Google 3D-tile streaming, cache/concurrency budget, omnidirectional load region, WGS84↔local frame, spawn anchors, OSM labels |
-| `player-vehicles-and-ordnance.md` | Player units     | `Vehicle` base + tank/car/jet, ground/flight models, guns + projectiles, bombs + tile deformation, model catalog              |
-| `spiderman-mode.md`               | Hidden movement  | The `ground/air/swing/zip/pull/wall` state machine, physics constants, momentum meter                                         |
-| `strategist-tools.md`             | Recon/analysis   | Distance, focus area, fire arc, line-of-sight, viewshed; orbit/pan camera                                                     |
-| `intel-import-and-detections.md`  | Imagery → world  | Pose capture, screenshot capture, oriented-box annotation, monoplotting deploy, `SentinelDetection` schema                    |
-| `backend-api.md`                  | Backend          | The FastAPI surface as it exists today                                                                                        |
-| `build-conventions-and-stack.md`  | Build/quality    | Nx targets, coding standards, model assets + licensing                                                                        |
+| Spec                                   | Domain           | One line                                                                                                                                     |
+| -------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cop-engine-and-modes.md`              | Core engine      | The `createSandbox` orchestrator, the two modes, render loop, camera, input, UI surface, lifecycle                                           |
+| `tile-streaming-and-geo.md`            | Geospatial world | Google 3D-tile streaming, cache/concurrency budget, omnidirectional load region, WGS84↔local frame, spawn anchors, OSM labels                |
+| `player-vehicles-and-ordnance.md`      | Player units     | `Vehicle` base + tank/car/jet, ground/flight models, guns + projectiles, bombs + tile deformation, model catalog                             |
+| `spiderman-mode.md`                    | Hidden movement  | The `ground/air/swing/zip/pull/wall` state machine, physics constants, momentum meter                                                        |
+| `strategist-tools.md`                  | Recon/analysis   | Domain index — see the 6 sub-files below (`specs-authority.md` Rule 8 split)                                                                 |
+| `strategist-tools-foundation.md`       | Recon/analysis   | Controller & camera, tool drafting, `PlanFeature` model + feature-list API, control measures, unit symbols, MGRS, bearings, plan persistence |
+| `strategist-tools-briefing.md`         | Recon/analysis   | Viewpoint bookmarks + brief playback, ground walk, classification/provenance, GeoJSON/KML export, sand-table wiring                          |
+| `strategist-tools-ui-design.md`        | Recon/analysis   | The strategist/player-mode panel-rail UI design system                                                                                       |
+| `strategist-tools-rehearsal.md`        | Recon/analysis   | Phase tagging, timeline scrubber + unit movement, guided rehearsal playback                                                                  |
+| `strategist-tools-terrain-analysis.md` | Recon/analysis   | Elevation profile + move timing, viewshed, counter-viewshed, route exposure, weapon/sensor range fans                                        |
+| `strategist-tools-invariants.md`       | Recon/analysis   | Cross-cutting invariants every strategist tool MUST hold                                                                                     |
+| `intel-import-and-detections.md`       | Imagery → world  | Pose capture, screenshot capture, oriented-box annotation, monoplotting deploy, `SentinelDetection` schema                                   |
+| `backend-api.md`                       | Backend          | The FastAPI surface as it exists today                                                                                                       |
+| `build-conventions-and-stack.md`       | Build/quality    | Nx targets, coding standards, model assets + licensing                                                                                       |
 
 ## Brief traceability
 
