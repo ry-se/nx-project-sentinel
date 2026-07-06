@@ -7,11 +7,13 @@ import {
   Vector3,
 } from 'three';
 
+import { SANDBOX_COMMON, SANDBOX_MISC } from '@/constants';
+
 /** A standing soldier's eye height above the ground — extends the LOS `EYE_HEIGHT`
  * naming convention (`planFeature.ts`) into this distinct domain (invariant 4). */
 export const EYE_HEIGHT_STANDING_M = 1.7;
 
-const MAX_PITCH_RAD = (89 * Math.PI) / 180;
+const MAX_PITCH_RAD = (SANDBOX_MISC.GROUND_WALK_PITCH_DEG * Math.PI) / SANDBOX_COMMON.DEGREES_HALF_TURN;
 const MOVE_SPEED_M_PER_S = 3.5;
 /** How far above the anchor to start the down-raycast from — comfortably above any
  * plausible terrain/building height in this engine's scenes. */

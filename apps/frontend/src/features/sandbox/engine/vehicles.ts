@@ -8,6 +8,8 @@ import type { ModelLibrary } from './modelCatalog'
 import { type BombDrop, Vehicle, type VehicleState, type VehicleType } from './vehicleBase'
 import { SpiderVehicle } from './spiderman'
 
+import { SANDBOX_COMMON, SANDBOX_VEHICLES } from '@/constants'
+
 export { Vehicle, DOWN } from './vehicleBase'
 export type { VehicleType, VehicleState, BombDrop } from './vehicleBase'
 
@@ -15,8 +17,8 @@ export type { VehicleType, VehicleState, BombDrop } from './vehicleBase'
 
 class TankVehicle extends Vehicle {
   public readonly label = 'M1 TANK'
-  public readonly cameraDist = 45
-  public override readonly fireCooldown = 0.9
+  public readonly cameraDist = SANDBOX_VEHICLES.TANK_CAMERA_DIST
+  public override readonly fireCooldown = SANDBOX_VEHICLES.TANK_FIRE_COOLDOWN
   private grounded = false
 
   constructor(keys: Set<string>, lib: ModelLibrary) {
@@ -26,19 +28,25 @@ class TankVehicle extends Vehicle {
 
   public override update(dt: number, terrain: Object3D): void {
     groundDrive(this, dt, terrain, {
-      maxSpeed: 18, accel: 10, brake: 8, reverseFactor: 0.5,
-      turnRate: 1.4, damping: 0.88, clearance: 0.9, maxClimb: 3,
+      maxSpeed: SANDBOX_VEHICLES.TANK_MAX_SPEED,
+      accel: SANDBOX_VEHICLES.TANK_ACCEL,
+      brake: SANDBOX_VEHICLES.TANK_BRAKE,
+      reverseFactor: SANDBOX_VEHICLES.TANK_REVERSE_FACTOR,
+      turnRate: SANDBOX_VEHICLES.TANK_TURN_RATE,
+      damping: SANDBOX_VEHICLES.TANK_DAMPING,
+      clearance: SANDBOX_VEHICLES.TANK_CLEARANCE,
+      maxClimb: SANDBOX_VEHICLES.TANK_MAX_CLIMB,
       grounded: this.grounded, setGrounded: g => { this.grounded = g },
     })
   }
 
   public override fireRay() {
     const dir = this.forwardXZ()
-    dir.y = 0.10
+    dir.y = SANDBOX_VEHICLES.TANK_FIRE_DIR_Y
     const origin = this.position.clone()
-      .addScaledVector(this.forwardXZ(), 4.6)
-    origin.y += 1.8
-    return { origin, direction: dir, speed: 130 }
+      .addScaledVector(this.forwardXZ(), SANDBOX_VEHICLES.TANK_FIRE_FORWARD_OFFSET)
+    origin.y += SANDBOX_VEHICLES.TANK_FIRE_HEIGHT
+    return { origin, direction: dir, speed: SANDBOX_VEHICLES.TANK_FIRE_SPEED }
   }
 }
 
@@ -46,7 +54,7 @@ class TankVehicle extends Vehicle {
 
 class CarVehicle extends Vehicle {
   public readonly label = 'GT SPORTS'
-  public readonly cameraDist = 22
+  public readonly cameraDist = SANDBOX_VEHICLES.CAR_CAMERA_DIST
   private grounded = false
 
   constructor(keys: Set<string>, lib: ModelLibrary) {
@@ -56,10 +64,18 @@ class CarVehicle extends Vehicle {
 
   public override update(dt: number, terrain: Object3D): void {
     // speed-sensitive steering: nimble in town, stable at 250 km/h
-    const speedFrac = Math.abs(this._speed) / 70
+    const speedFrac = Math.abs(this._speed) / SANDBOX_VEHICLES.CAR_SPEED_FRAC_DENOMINATOR
     groundDrive(this, dt, terrain, {
-      maxSpeed: 70, accel: 22, brake: 35, reverseFactor: 0.25,
-      turnRate: 2.2 - 1.5 * Math.min(speedFrac, 1), damping: 0.985, clearance: 0.45, maxClimb: 2,
+      maxSpeed: SANDBOX_VEHICLES.CAR_MAX_SPEED,
+      accel: SANDBOX_VEHICLES.CAR_ACCEL,
+      brake: SANDBOX_VEHICLES.CAR_BRAKE,
+      reverseFactor: SANDBOX_VEHICLES.CAR_REVERSE_FACTOR,
+      turnRate:
+        SANDBOX_VEHICLES.CAR_TURN_RATE -
+        SANDBOX_VEHICLES.CAR_TURN_RATE_DROP * Math.min(speedFrac, 1),
+      damping: SANDBOX_VEHICLES.CAR_DAMPING,
+      clearance: SANDBOX_VEHICLES.CAR_CLEARANCE,
+      maxClimb: SANDBOX_VEHICLES.CAR_MAX_CLIMB,
       grounded: this.grounded, setGrounded: g => { this.grounded = g },
     })
   }
@@ -67,14 +83,14 @@ class CarVehicle extends Vehicle {
 
 // ---------- JET ----------
 
-const AFTERBURNER_MAX = 580   // m/s (~Mach 1.7)
-const NORMAL_MAX = 170
-const ROLL_SPEED = (Math.PI * 2) / 1.1  // full barrel roll in 1.1 s
+const AFTERBURNER_MAX = SANDBOX_VEHICLES.JET_AFTERBURNER_MAX   // m/s (~Mach 1.7)
+const NORMAL_MAX = SANDBOX_VEHICLES.JET_NORMAL_MAX
+const ROLL_SPEED = (Math.PI * 2) / SANDBOX_VEHICLES.JET_ROLL_SECONDS  // full barrel roll in 1.1 s
 
 class JetVehicle extends Vehicle {
   public readonly label = 'F-16 JET'
-  public readonly cameraDist = 90
-  public override readonly fireCooldown = 0.28
+  public readonly cameraDist = SANDBOX_VEHICLES.JET_CAMERA_DIST
+  public override readonly fireCooldown = SANDBOX_VEHICLES.JET_FIRE_COOLDOWN
   private pitch = 0
   private bank = 0
   private altitude = 0
@@ -90,7 +106,7 @@ class JetVehicle extends Vehicle {
   constructor(keys: Set<string>, lib: ModelLibrary) {
     super(keys)
     this.object.add(lib.instance('jet', buildJetPrimitive))
-    this._speed = 80
+    this._speed = SANDBOX_VEHICLES.JET_INITIAL_SPEED
   }
 
   public override update(dt: number, terrain: Object3D): void {
@@ -106,24 +122,41 @@ class JetVehicle extends Vehicle {
 
     // --- throttle ---
     const maxSpd = afterburner ? AFTERBURNER_MAX : NORMAL_MAX
-    const accel  = afterburner ? 280 : 30
+    const accel  = afterburner
+      ? SANDBOX_VEHICLES.JET_AFTERBURNER_ACCEL
+      : SANDBOX_VEHICLES.JET_NORMAL_ACCEL
     if (throttleUp)   this._speed = Math.min(this._speed + accel * dt, maxSpd)
-    if (throttleDown) this._speed = Math.max(this._speed - 50 * dt, 35)
+    if (throttleDown)
+      this._speed = Math.max(
+        this._speed - SANDBOX_VEHICLES.JET_THROTTLE_DOWN_ACCEL * dt,
+        SANDBOX_VEHICLES.JET_MIN_SPEED,
+      )
     if (!throttleUp && !afterburner) {
       // decay back toward cruise when not actively burning
-      if (this._speed > NORMAL_MAX) this._speed = Math.max(this._speed - 120 * dt, NORMAL_MAX)
+      if (this._speed > NORMAL_MAX)
+        this._speed = Math.max(this._speed - SANDBOX_VEHICLES.JET_CRUISE_DECEL * dt, NORMAL_MAX)
     }
 
     // --- yaw / bank ---
     const turnInput = (left ? 1 : 0) - (right ? 1 : 0)
-    const turnRate = afterburner ? 0.4 : 0.9  // less nimble at hypersonic speed
+    const turnRate = afterburner
+      ? SANDBOX_VEHICLES.JET_AFTERBURNER_TURN_RATE
+      : SANDBOX_VEHICLES.JET_NORMAL_TURN_RATE  // less nimble at hypersonic speed
     this._heading += turnInput * turnRate * dt
-    this.bank += (turnInput * -0.7 - this.bank) * Math.min(1, dt * 3)
+    this.bank +=
+      (turnInput * SANDBOX_VEHICLES.JET_BANK_TARGET - this.bank) *
+      Math.min(1, dt * SANDBOX_VEHICLES.JET_BANK_LERP_RATE)
 
     // --- pitch ---
     const pitchInput = (pitchUp ? 1 : 0) - (pitchDown ? 1 : 0)
-    this.pitch += (pitchInput * 0.5 - this.pitch * 0.4) * Math.min(1, dt * 2.5)
-    this.pitch = Math.max(-0.9, Math.min(0.9, this.pitch))
+    this.pitch +=
+      (pitchInput * SANDBOX_VEHICLES.JET_PITCH_TARGET -
+        this.pitch * SANDBOX_VEHICLES.JET_PITCH_CENTERING) *
+      Math.min(1, dt * SANDBOX_VEHICLES.JET_PITCH_LERP_RATE)
+    this.pitch = Math.max(
+      SANDBOX_VEHICLES.JET_PITCH_MIN,
+      Math.min(SANDBOX_VEHICLES.JET_PITCH_MAX, this.pitch),
+    )
 
     // --- barrel roll (Q / E) ---
     if (this.rollPhase <= 0 && (rollLeft || rollRight)) {
@@ -136,7 +169,7 @@ class JetVehicle extends Vehicle {
       this.rollPhase  -= step
     } else {
       // decay roll offset back to neutral when not rolling
-      this.rollOffset *= Math.pow(0.05, dt)
+      this.rollOffset *= Math.pow(SANDBOX_VEHICLES.JET_ROLL_DECAY, dt)
     }
 
     // --- movement ---
@@ -150,12 +183,12 @@ class JetVehicle extends Vehicle {
     // --- terrain avoidance (filter overhead structures like bridges) ---
     const groundY = this.sampleGround(
       this.position.x, this.position.z, terrain,
-      this.position.y + 600, this.position.y,
+      this.position.y + SANDBOX_VEHICLES.JET_GROUND_SAMPLE_UP, this.position.y,
     )
     this.altitude = groundY !== null ? this.position.y - groundY : this.position.y
-    if (groundY !== null && this.position.y < groundY + 10) {
-      this.position.y = groundY + 10
-      if (this.pitch < 0) this.pitch = 0.1
+    if (groundY !== null && this.position.y < groundY + SANDBOX_VEHICLES.JET_GROUND_CLEARANCE) {
+      this.position.y = groundY + SANDBOX_VEHICLES.JET_GROUND_CLEARANCE
+      if (this.pitch < 0) this.pitch = SANDBOX_VEHICLES.JET_GROUND_PITCH_RECOVER
     }
 
     // --- apply rotation ---
@@ -168,10 +201,10 @@ class JetVehicle extends Vehicle {
     if (this.bombCooldown > 0) this.bombCooldown -= dt
     if (this.keys.has('b') && this.bombCooldown <= 0) {
       this.bombDrops.push({
-        pos: this.position.clone().addScaledVector(dir, -4), // drop from belly
-        vel: dir.clone().multiplyScalar(this._speed * 0.9),
+        pos: this.position.clone().addScaledVector(dir, SANDBOX_VEHICLES.JET_BOMB_FORWARD_OFFSET), // drop from belly
+        vel: dir.clone().multiplyScalar(this._speed * SANDBOX_VEHICLES.JET_BOMB_VELOCITY_FACTOR),
       })
-      this.bombCooldown = 1.2
+      this.bombCooldown = SANDBOX_VEHICLES.JET_BOMB_COOLDOWN
     }
   }
 
@@ -192,8 +225,8 @@ class JetVehicle extends Vehicle {
       Math.sin(this.pitch),
       Math.cos(this._heading) * Math.cos(this.pitch),
     )
-    const origin = this.position.clone().addScaledVector(dir, 9)
-    return { origin, direction: dir, speed: this._speed + 150 }
+    const origin = this.position.clone().addScaledVector(dir, SANDBOX_VEHICLES.JET_FIRE_FORWARD_OFFSET)
+    return { origin, direction: dir, speed: this._speed + SANDBOX_VEHICLES.JET_FIRE_SPEED_ADD }
   }
 }
 
@@ -231,7 +264,7 @@ function groundDrive(v: Vehicle, dt: number, terrain: Object3D, p: DriveParams):
   else if (backward) self._speed = Math.max(self._speed - p.brake * dt, -p.maxSpeed * p.reverseFactor)
   else self._speed *= p.damping
 
-  if (Math.abs(self._speed) > 0.3) {
+  if (Math.abs(self._speed) > SANDBOX_VEHICLES.GROUND_DRIVE_SPEED_EPSILON) {
     if (left) self._heading += p.turnRate * dt * Math.sign(self._speed)
     if (right) self._heading -= p.turnRate * dt * Math.sign(self._speed)
   }
@@ -241,7 +274,13 @@ function groundDrive(v: Vehicle, dt: number, terrain: Object3D, p: DriveParams):
   const nx = self.object.position.x + Math.sin(self._heading) * step
   const nz = self.object.position.z + Math.cos(self._heading) * step
 
-  const groundY = self.sampleGround(nx, nz, terrain, self.object.position.y + 80, self.object.position.y - p.clearance)
+  const groundY = self.sampleGround(
+    nx,
+    nz,
+    terrain,
+    self.object.position.y + SANDBOX_VEHICLES.GROUND_DRIVE_SAMPLE_UP,
+    self.object.position.y - p.clearance,
+  )
   if (groundY === null) {
     self.object.position.x = nx
     self.object.position.z = nz
@@ -258,7 +297,8 @@ function groundDrive(v: Vehicle, dt: number, terrain: Object3D, p: DriveParams):
   self.object.position.z = nz
   const targetY = groundY + p.clearance
   self.object.position.y = p.grounded
-    ? self.object.position.y + (targetY - self.object.position.y) * Math.min(1, dt * 10)
+    ? self.object.position.y +
+      (targetY - self.object.position.y) * Math.min(1, dt * SANDBOX_VEHICLES.GROUND_DRIVE_Y_LERP_RATE)
     : targetY
   p.setGrounded(true)
 }
@@ -329,9 +369,9 @@ export class VehicleManager {
     from.bombDrops.length = 0
     const to = this.vehicles[type]
     to.object.position.copy(from.object.position)
-    if (type === 'jet') to.object.position.y += 60 // takeoff boost
+    if (type === 'jet') to.object.position.y += SANDBOX_VEHICLES.SWITCH_JET_TAKEOFF_BOOST // takeoff boost
     if (type === 'spider') {
-      to.object.position.y += 10 // drop-in entrance
+      to.object.position.y += SANDBOX_VEHICLES.SWITCH_SPIDER_DROP_IN_BOOST // drop-in entrance
       ;(to as SpiderVehicle).onSpawn()
     }
     from.object.visible = false
@@ -348,7 +388,7 @@ export class VehicleManager {
     this.active.update(dt, terrain)
 
     if (this.keys.has(' ') && this.active.fireCooldown > 0) {
-      const now = performance.now() / 1000
+      const now = performance.now() / SANDBOX_VEHICLES.FIRE_NOW_SECONDS_DIVISOR
       if (now - this.lastFiredAt >= this.active.fireCooldown) {
         const ray = this.active.fireRay()
         if (ray) {
@@ -361,8 +401,12 @@ export class VehicleManager {
 
   public hudText(): string {
     const s = this.state
-    const kmh = Math.abs(s.speed) * 3.6
-    const heading = ((s.heading * 180 / Math.PI) % 360 + 360) % 360
+    const kmh = Math.abs(s.speed) * SANDBOX_VEHICLES.KMH_PER_MPS
+    const heading =
+      ((s.heading * SANDBOX_COMMON.DEGREES_HALF_TURN / Math.PI) %
+        SANDBOX_COMMON.DEGREES_FULL_CIRCLE +
+        SANDBOX_COMMON.DEGREES_FULL_CIRCLE) %
+      SANDBOX_COMMON.DEGREES_FULL_CIRCLE
     let text = `${s.label}\nSpeed: ${kmh.toFixed(0)} km/h\nHeading: ${heading.toFixed(0)}°`
     if (s.altitude !== null) text += `\nAlt: ${s.altitude.toFixed(0)} m`
     if (s.afterburner) text += '\n🔥 AFTERBURNER'
@@ -376,42 +420,111 @@ export class VehicleManager {
 
 export function buildTankPrimitive(): Group {
   const g = new Group()
-  const hull = new MeshStandardMaterial({ color: 0x3d4a2e, roughness: 0.8 })
-  const dark = new MeshStandardMaterial({ color: 0x2a3320, roughness: 0.9 })
+  const hull = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.TANK_COLOR,
+    roughness: SANDBOX_VEHICLES.TANK_ROUGHNESS,
+  })
+  const dark = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.TANK_DARK_COLOR,
+    roughness: SANDBOX_VEHICLES.TANK_DARK_ROUGHNESS,
+  })
 
-  const body = new Mesh(new BoxGeometry(3.5, 1.2, 6.0), hull)
-  body.position.y = 0.6
-  const trackL = new Mesh(new BoxGeometry(0.9, 0.9, 6.4), dark)
-  trackL.position.set(-1.7, 0.45, 0)
+  const body = new Mesh(
+    new BoxGeometry(
+      SANDBOX_VEHICLES.TANK_HULL_W,
+      SANDBOX_VEHICLES.TANK_HULL_H,
+      SANDBOX_VEHICLES.TANK_HULL_D,
+    ),
+    hull,
+  )
+  body.position.y = SANDBOX_VEHICLES.TANK_HULL_Y
+  const trackL = new Mesh(
+    new BoxGeometry(
+      SANDBOX_VEHICLES.TANK_TRACK_W,
+      SANDBOX_VEHICLES.TANK_TRACK_H,
+      SANDBOX_VEHICLES.TANK_TRACK_D,
+    ),
+    dark,
+  )
+  trackL.position.set(-SANDBOX_VEHICLES.TANK_TRACK_X, SANDBOX_VEHICLES.TANK_TRACK_Y, 0)
   const trackR = trackL.clone()
-  trackR.position.x = 1.7
-  const turret = new Mesh(new BoxGeometry(2.4, 0.8, 3.0), hull)
-  turret.position.set(0, 1.6, -0.3)
-  const barrel = new Mesh(new CylinderGeometry(0.14, 0.16, 4.2, 12), dark)
+  trackR.position.x = SANDBOX_VEHICLES.TANK_TRACK_X
+  const turret = new Mesh(
+    new BoxGeometry(
+      SANDBOX_VEHICLES.TANK_TURRET_W,
+      SANDBOX_VEHICLES.TANK_TURRET_H,
+      SANDBOX_VEHICLES.TANK_TURRET_D,
+    ),
+    hull,
+  )
+  turret.position.set(0, SANDBOX_VEHICLES.TANK_TURRET_Y, SANDBOX_VEHICLES.TANK_TURRET_Z)
+  const barrel = new Mesh(
+    new CylinderGeometry(
+      SANDBOX_VEHICLES.TANK_BARREL_RADIUS_TOP,
+      SANDBOX_VEHICLES.TANK_BARREL_RADIUS_BOTTOM,
+      SANDBOX_VEHICLES.TANK_BARREL_LENGTH,
+      SANDBOX_VEHICLES.TANK_BARREL_SEGMENTS,
+    ),
+    dark,
+  )
   barrel.rotation.x = Math.PI / 2
-  barrel.position.set(0, 1.7, 2.4)
+  barrel.position.set(0, SANDBOX_VEHICLES.TANK_BARREL_Y, SANDBOX_VEHICLES.TANK_BARREL_Z)
   g.add(body, trackL, trackR, turret, barrel)
   return g
 }
 
 export function buildCarPrimitive(): Group {
   const g = new Group()
-  const paint = new MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.25, metalness: 0.7 })
-  const glass = new MeshStandardMaterial({ color: 0x222a33, roughness: 0.1, metalness: 0.4 })
-  const dark = new MeshStandardMaterial({ color: 0x141414, roughness: 0.9 })
+  const paint = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.CAR_PAINT_COLOR,
+    roughness: SANDBOX_VEHICLES.CAR_PAINT_ROUGHNESS,
+    metalness: SANDBOX_VEHICLES.CAR_PAINT_METALNESS,
+  })
+  const glass = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.CAR_GLASS_COLOR,
+    roughness: SANDBOX_VEHICLES.CAR_GLASS_ROUGHNESS,
+    metalness: SANDBOX_VEHICLES.CAR_GLASS_METALNESS,
+  })
+  const dark = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.CAR_DARK_COLOR,
+    roughness: SANDBOX_VEHICLES.CAR_DARK_ROUGHNESS,
+  })
 
-  const body = new Mesh(new BoxGeometry(2.0, 0.55, 4.6), paint)
-  body.position.y = 0.55
-  const cabin = new Mesh(new BoxGeometry(1.7, 0.45, 2.0), glass)
-  cabin.position.set(0, 1.0, -0.2)
-  const spoiler = new Mesh(new BoxGeometry(1.9, 0.08, 0.5), dark)
-  spoiler.position.set(0, 1.0, -2.2)
+  const body = new Mesh(
+    new BoxGeometry(SANDBOX_VEHICLES.CAR_BODY_W, SANDBOX_VEHICLES.CAR_BODY_H, SANDBOX_VEHICLES.CAR_BODY_D),
+    paint,
+  )
+  body.position.y = SANDBOX_VEHICLES.CAR_BODY_Y
+  const cabin = new Mesh(
+    new BoxGeometry(SANDBOX_VEHICLES.CAR_CABIN_W, SANDBOX_VEHICLES.CAR_CABIN_H, SANDBOX_VEHICLES.CAR_CABIN_D),
+    glass,
+  )
+  cabin.position.set(0, SANDBOX_VEHICLES.CAR_CABIN_Y, SANDBOX_VEHICLES.CAR_CABIN_Z)
+  const spoiler = new Mesh(
+    new BoxGeometry(
+      SANDBOX_VEHICLES.CAR_SPOILER_W,
+      SANDBOX_VEHICLES.CAR_SPOILER_H,
+      SANDBOX_VEHICLES.CAR_SPOILER_D,
+    ),
+    dark,
+  )
+  spoiler.position.set(0, SANDBOX_VEHICLES.CAR_SPOILER_Y, SANDBOX_VEHICLES.CAR_SPOILER_Z)
 
-  const wheelGeo = new CylinderGeometry(0.38, 0.38, 0.3, 16)
+  const wheelGeo = new CylinderGeometry(
+    SANDBOX_VEHICLES.CAR_WHEEL_RADIUS,
+    SANDBOX_VEHICLES.CAR_WHEEL_RADIUS,
+    SANDBOX_VEHICLES.CAR_WHEEL_DEPTH,
+    SANDBOX_VEHICLES.CAR_WHEEL_SEGMENTS,
+  )
   wheelGeo.rotateZ(Math.PI / 2)
-  for (const [x, z] of [[-1.0, 1.5], [1.0, 1.5], [-1.0, -1.5], [1.0, -1.5]]) {
+  for (const [x, z] of [
+    [-SANDBOX_VEHICLES.CAR_WHEEL_X, SANDBOX_VEHICLES.CAR_WHEEL_Z],
+    [SANDBOX_VEHICLES.CAR_WHEEL_X, SANDBOX_VEHICLES.CAR_WHEEL_Z],
+    [-SANDBOX_VEHICLES.CAR_WHEEL_X, -SANDBOX_VEHICLES.CAR_WHEEL_Z],
+    [SANDBOX_VEHICLES.CAR_WHEEL_X, -SANDBOX_VEHICLES.CAR_WHEEL_Z],
+  ]) {
     const w = new Mesh(wheelGeo, dark)
-    w.position.set(x, 0.38, z)
+    w.position.set(x, SANDBOX_VEHICLES.CAR_WHEEL_Y, z)
     g.add(w)
   }
   g.add(body, cabin, spoiler)
@@ -420,21 +533,53 @@ export function buildCarPrimitive(): Group {
 
 export function buildJetPrimitive(): Group {
   const g = new Group()
-  const grey = new MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.4, metalness: 0.5 })
-  const dark = new MeshStandardMaterial({ color: 0x2c3338, roughness: 0.6 })
+  const grey = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.JET_GREY_COLOR,
+    roughness: SANDBOX_VEHICLES.JET_GREY_ROUGHNESS,
+    metalness: SANDBOX_VEHICLES.JET_GREY_METALNESS,
+  })
+  const dark = new MeshStandardMaterial({
+    color: SANDBOX_VEHICLES.JET_DARK_COLOR,
+    roughness: SANDBOX_VEHICLES.JET_DARK_ROUGHNESS,
+  })
 
-  const fuselage = new Mesh(new CylinderGeometry(0.6, 0.35, 9, 12), grey)
+  const fuselage = new Mesh(
+    new CylinderGeometry(
+      SANDBOX_VEHICLES.JET_FUSELAGE_RADIUS_TOP,
+      SANDBOX_VEHICLES.JET_FUSELAGE_RADIUS_BOTTOM,
+      SANDBOX_VEHICLES.JET_FUSELAGE_LENGTH,
+      SANDBOX_VEHICLES.JET_FUSELAGE_SEGMENTS,
+    ),
+    grey,
+  )
   fuselage.rotation.x = Math.PI / 2
-  fuselage.position.y = 0.5
-  const nose = new Mesh(new CylinderGeometry(0.05, 0.6, 2.2, 12), grey)
+  fuselage.position.y = SANDBOX_VEHICLES.JET_FUSELAGE_Y
+  const nose = new Mesh(
+    new CylinderGeometry(
+      SANDBOX_VEHICLES.JET_NOSE_RADIUS_TOP,
+      SANDBOX_VEHICLES.JET_NOSE_RADIUS_BOTTOM,
+      SANDBOX_VEHICLES.JET_NOSE_LENGTH,
+      SANDBOX_VEHICLES.JET_NOSE_SEGMENTS,
+    ),
+    grey,
+  )
   nose.rotation.x = Math.PI / 2
-  nose.position.set(0, 0.5, 5.5)
-  const wing = new Mesh(new BoxGeometry(9, 0.12, 2.6), grey)
-  wing.position.set(0, 0.3, -0.4)
-  const tailWing = new Mesh(new BoxGeometry(3.4, 0.1, 1.2), grey)
-  tailWing.position.set(0, 0.5, -4.0)
-  const fin = new Mesh(new BoxGeometry(0.12, 1.8, 1.5), dark)
-  fin.position.set(0, 1.3, -4.0)
+  nose.position.set(0, SANDBOX_VEHICLES.JET_NOSE_Y, SANDBOX_VEHICLES.JET_NOSE_Z)
+  const wing = new Mesh(
+    new BoxGeometry(SANDBOX_VEHICLES.JET_WING_W, SANDBOX_VEHICLES.JET_WING_H, SANDBOX_VEHICLES.JET_WING_D),
+    grey,
+  )
+  wing.position.set(0, SANDBOX_VEHICLES.JET_WING_Y, SANDBOX_VEHICLES.JET_WING_Z)
+  const tailWing = new Mesh(
+    new BoxGeometry(SANDBOX_VEHICLES.JET_TAIL_W, SANDBOX_VEHICLES.JET_TAIL_H, SANDBOX_VEHICLES.JET_TAIL_D),
+    grey,
+  )
+  tailWing.position.set(0, SANDBOX_VEHICLES.JET_TAIL_Y, SANDBOX_VEHICLES.JET_TAIL_Z)
+  const fin = new Mesh(
+    new BoxGeometry(SANDBOX_VEHICLES.JET_FIN_W, SANDBOX_VEHICLES.JET_FIN_H, SANDBOX_VEHICLES.JET_FIN_D),
+    dark,
+  )
+  fin.position.set(0, SANDBOX_VEHICLES.JET_FIN_Y, SANDBOX_VEHICLES.JET_FIN_Z)
   g.add(fuselage, nose, wing, tailWing, fin)
   return g
 }

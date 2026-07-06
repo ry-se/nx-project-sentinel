@@ -27,6 +27,8 @@ import type { GeoFrame, GeoPosition } from './geoFrame';
 import { buildUnitSymbolGroup, readUnitMetadata } from './unitSymbol';
 import { type SystemId, WEAPON_SYSTEMS } from './weaponSystems';
 
+import { SANDBOX_COMMON, SANDBOX_PLAN_FEATURE } from '@/constants';
+
 /** A JSON-safe stand-in for a Three.js `Vector3` — the shape every `PlanFeature` persists. */
 export interface LocalPoint {
   x: number;
@@ -64,20 +66,20 @@ export interface PlanFeature {
   metadata: Record<string, unknown>;
 }
 
-export const EYE_HEIGHT = 2; // metres above clicked surface for LOS endpoints
+export const EYE_HEIGHT = SANDBOX_PLAN_FEATURE.EYE_HEIGHT; // metres above clicked surface for LOS endpoints
 
 export const MAT_MEASURE = new LineBasicMaterial({
-  color: 0x35d4ff,
+  color: SANDBOX_PLAN_FEATURE.MEASURE_COLOR,
   depthTest: false,
   transparent: true,
 });
 export const MAT_LOS_CLEAR = new LineBasicMaterial({
-  color: 0x55ff55,
+  color: SANDBOX_PLAN_FEATURE.LOS_CLEAR_COLOR,
   depthTest: false,
   transparent: true,
 });
 export const MAT_LOS_BLOCKED = new LineBasicMaterial({
-  color: 0xff4444,
+  color: SANDBOX_PLAN_FEATURE.LOS_BLOCKED_COLOR,
   depthTest: false,
   transparent: true,
 });
@@ -101,18 +103,26 @@ export function shoelaceXZ(pts: Vector3[]): number {
 }
 
 export function fmtDist(m: number): string {
-  return m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(0)} m`;
+  return m >= SANDBOX_COMMON.METERS_PER_KILOMETER
+    ? `${(m / SANDBOX_COMMON.METERS_PER_KILOMETER).toFixed(2)} km`
+    : `${m.toFixed(0)} m`;
 }
 
 export function fmtArea(m2: number): string {
-  if (m2 >= 1_000_000) return `${(m2 / 1_000_000).toFixed(2)} km²`;
-  if (m2 >= 10_000) return `${(m2 / 10_000).toFixed(1)} ha`;
+  if (m2 >= SANDBOX_COMMON.SQUARE_METERS_PER_SQUARE_KILOMETER)
+    return `${(m2 / SANDBOX_COMMON.SQUARE_METERS_PER_SQUARE_KILOMETER).toFixed(2)} km²`;
+  if (m2 >= SANDBOX_COMMON.SQUARE_METERS_PER_HECTARE)
+    return `${(m2 / SANDBOX_COMMON.SQUARE_METERS_PER_HECTARE).toFixed(1)} ha`;
   return `${m2.toFixed(0)} m²`;
 }
 
 export function marker(at: Vector3, color: number, size = 2): Mesh {
   const m = new Mesh(
-    new SphereGeometry(size, 12, 12),
+    new SphereGeometry(
+      size,
+      SANDBOX_PLAN_FEATURE.MARKER_SEGMENTS,
+      SANDBOX_PLAN_FEATURE.MARKER_SEGMENTS
+    ),
     new MeshBasicMaterial({ color, depthTest: false, transparent: true })
   );
   m.position.copy(at);
@@ -123,18 +133,21 @@ export function marker(at: Vector3, color: number, size = 2): Mesh {
 export function label(at: Vector3, text: string): Sprite {
   const lines = text.split('\n');
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 64 + lines.length * 56;
+  canvas.width = SANDBOX_PLAN_FEATURE.LABEL_CANVAS_WIDTH;
+  canvas.height =
+    SANDBOX_PLAN_FEATURE.LABEL_CANVAS_BASE_HEIGHT +
+    lines.length * SANDBOX_PLAN_FEATURE.LABEL_LINE_HEIGHT;
   const ctx = canvas.getContext('2d')!;
-  ctx.font = 'bold 44px monospace';
+  ctx.font = `bold ${SANDBOX_PLAN_FEATURE.LABEL_FONT_SIZE}px monospace`;
   ctx.textAlign = 'center';
-  ctx.lineWidth = 10;
+  ctx.lineWidth = SANDBOX_PLAN_FEATURE.LABEL_STROKE_WIDTH;
   ctx.strokeStyle = 'rgba(0,0,0,0.9)';
   ctx.fillStyle = '#ffffff';
   lines.forEach((line, i) => {
-    const y = 56 + i * 56;
-    ctx.strokeText(line, 256, y);
-    ctx.fillText(line, 256, y);
+    const y =
+      SANDBOX_PLAN_FEATURE.LABEL_LINE_HEIGHT + i * SANDBOX_PLAN_FEATURE.LABEL_LINE_HEIGHT;
+    ctx.strokeText(line, SANDBOX_PLAN_FEATURE.LABEL_CENTER_X, y);
+    ctx.fillText(line, SANDBOX_PLAN_FEATURE.LABEL_CENTER_X, y);
   });
 
   const sprite = new Sprite(
@@ -145,7 +158,7 @@ export function label(at: Vector3, text: string): Sprite {
     })
   );
   sprite.position.copy(at);
-  const w = 70;
+  const w = SANDBOX_PLAN_FEATURE.LABEL_SCALE_WIDTH;
   sprite.scale.set(w, w * (canvas.height / canvas.width), 1);
   sprite.renderOrder = 1001;
   return sprite;
@@ -155,7 +168,9 @@ export function label(at: Vector3, text: string): Sprite {
 
 /** Mils = degrees x 6400/360, rounded to whole mils (invariant 2). */
 export function degToMils(deg: number): number {
-  return Math.round((deg * 6400) / 360);
+  return Math.round(
+    (deg * SANDBOX_PLAN_FEATURE.MILS_PER_CIRCLE) / SANDBOX_COMMON.DEGREES_FULL_CIRCLE
+  );
 }
 
 /** True GRID bearing (0-360, 0 = grid north) of the direction from `from` to `to`, via
@@ -169,8 +184,10 @@ export function computeBearingDeg(from: Vector3, to: Vector3, geoFrame: GeoFrame
 /** e.g. "095°G/1689 mils" — the "G" marks grid north explicitly (invariant 3: the north
  * reference MUST be stated wherever a bearing is shown). */
 export function formatBearing(deg: number): string {
-  const rounded = Math.round(deg) % 360;
-  return `${rounded.toString().padStart(3, '0')}°G/${degToMils(deg)} mils`;
+  const rounded = Math.round(deg) % SANDBOX_COMMON.DEGREES_FULL_CIRCLE;
+  return `${rounded
+    .toString()
+    .padStart(SANDBOX_PLAN_FEATURE.BEARING_PAD_LENGTH, '0')}°G/${degToMils(deg)} mils`;
 }
 
 // ---------- pure group builders (data-in, Group-out — shared by live draft + rebuild) ----------
@@ -182,10 +199,10 @@ export function buildDistanceGroup(pts: Vector3[], geoFrame: GeoFrame): Group {
   const line = new Line(new BufferGeometry().setFromPoints(pts), MAT_MEASURE);
   line.renderOrder = 999;
   g.add(line);
-  for (const p of pts) g.add(marker(p, 0x35d4ff));
+  for (const p of pts) g.add(marker(p, SANDBOX_PLAN_FEATURE.MEASURE_COLOR));
   g.add(
     label(
-      pts[pts.length - 1].clone().add(new Vector3(0, 12, 0)),
+      pts[pts.length - 1].clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.DISTANCE_LABEL_Y_OFFSET, 0)),
       `${fmtDist(total)} · ${formatBearing(bearing)}`
     )
   );
@@ -195,7 +212,7 @@ export function buildDistanceGroup(pts: Vector3[], geoFrame: GeoFrame): Group {
 export function buildFocusGroup(pts: Vector3[], name: string): Group {
   const minY = Math.min(...pts.map((p) => p.y));
   const maxY = Math.max(...pts.map((p) => p.y));
-  const height = maxY - minY + 80;
+  const height = maxY - minY + SANDBOX_PLAN_FEATURE.FOCUS_HEIGHT_BUFFER;
 
   const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
   const cz = pts.reduce((s, p) => s + p.z, 0) / pts.length;
@@ -221,7 +238,7 @@ export function buildFocusGroup(pts: Vector3[], name: string): Group {
       depthWrite: false,
     })
   );
-  mesh.position.set(cx, minY - 5, cz);
+  mesh.position.set(cx, minY - SANDBOX_PLAN_FEATURE.FOCUS_BASE_OFFSET, cz);
 
   const edges = new LineSegments(
     new EdgesGeometry(geo),
@@ -232,7 +249,9 @@ export function buildFocusGroup(pts: Vector3[], name: string): Group {
   const areaM2 = shoelaceXZ(pts);
   const g = new Group();
   g.add(mesh, edges);
-  g.add(label(new Vector3(cx, maxY + 95, cz), `${name}\n${fmtArea(areaM2)}`));
+  g.add(
+    label(new Vector3(cx, maxY + SANDBOX_PLAN_FEATURE.FOCUS_LABEL_Y_OFFSET, cz), `${name}\n${fmtArea(areaM2)}`)
+  );
   return g;
 }
 
@@ -248,24 +267,26 @@ export function buildArcGroup(pts: Vector3[]): Group {
   shape.absarc(0, 0, r, a1, a2, false);
   shape.closePath();
 
-  const geo = new ShapeGeometry(shape, 48);
+  const geo = new ShapeGeometry(shape, SANDBOX_PLAN_FEATURE.ARC_SEGMENTS);
   geo.rotateX(-Math.PI / 2);
   const mesh = new Mesh(
     geo,
     new MeshBasicMaterial({
-      color: 0xef5350,
+      color: SANDBOX_PLAN_FEATURE.ARC_COLOR,
       transparent: true,
       opacity: 0.22,
       side: DoubleSide,
       depthWrite: false,
     })
   );
-  mesh.position.set(center.x, center.y + 1.5, center.z);
+  mesh.position.set(center.x, center.y + SANDBOX_PLAN_FEATURE.ARC_ELEVATION_OFFSET, center.z);
 
   const g = new Group();
   g.add(mesh);
-  g.add(marker(center, 0xef5350));
-  g.add(label(center.clone().add(new Vector3(0, 25, 0)), `r=${fmtDist(r)}`));
+  g.add(marker(center, SANDBOX_PLAN_FEATURE.ARC_COLOR));
+  g.add(
+    label(center.clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.ARC_LABEL_Y_OFFSET, 0)), `r=${fmtDist(r)}`)
+  );
   return g;
 }
 
@@ -291,8 +312,8 @@ export function buildLinearMeasureGroup(
   const material = dashed
     ? new LineDashedMaterial({
         color,
-        dashSize: 8,
-        gapSize: 5,
+        dashSize: SANDBOX_PLAN_FEATURE.LINEAR_DASH_SIZE,
+        gapSize: SANDBOX_PLAN_FEATURE.LINEAR_GAP_SIZE,
         depthTest: false,
         transparent: true,
       })
@@ -303,8 +324,10 @@ export function buildLinearMeasureGroup(
 
   const g = new Group();
   g.add(line);
-  for (const p of pts) g.add(marker(p, color, 1.5));
-  g.add(label(pts[pts.length - 1].clone().add(new Vector3(0, 12, 0)), name));
+  for (const p of pts) g.add(marker(p, color, SANDBOX_PLAN_FEATURE.LINEAR_MARKER_SIZE));
+  g.add(
+    label(pts[pts.length - 1].clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.LINEAR_LABEL_Y_OFFSET, 0)), name)
+  );
   return g;
 }
 
@@ -322,10 +345,10 @@ export function buildBandSegment(
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dz);
-  if (len < 1e-6) return null;
+  if (len < SANDBOX_PLAN_FEATURE.BAND_EPSILON) return null;
   const px = (-dz / len) * halfWidth;
   const pz = (dx / len) * halfWidth;
-  const y = (a.y + b.y) / 2 + 0.4;
+  const y = (a.y + b.y) / 2 + SANDBOX_PLAN_FEATURE.BAND_ELEVATION_OFFSET;
 
   const positions = new Float32Array([
     a.x + px,
@@ -348,14 +371,14 @@ export function buildBandSegment(
     b.z + pz,
   ]);
   const geo = new BufferGeometry();
-  geo.setAttribute('position', new BufferAttribute(positions, 3));
+  geo.setAttribute('position', new BufferAttribute(positions, SANDBOX_PLAN_FEATURE.BEARING_PAD_LENGTH));
   geo.computeVertexNormals();
   return new Mesh(
     geo,
     new MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.16,
+      opacity: SANDBOX_PLAN_FEATURE.BAND_OPACITY,
       side: DoubleSide,
       depthWrite: false,
     })
@@ -363,11 +386,16 @@ export function buildBandSegment(
 }
 
 /** A solid triangular arrowhead at `tip`, pointing along `dir` (normalized, XZ-plane). */
-function buildArrowhead(tip: Vector3, dir: Vector3, color: number, size = 10): Mesh {
+function buildArrowhead(
+  tip: Vector3,
+  dir: Vector3,
+  color: number,
+  size = SANDBOX_PLAN_FEATURE.ARROWHEAD_SIZE
+): Mesh {
   const back = tip.clone().addScaledVector(dir, -size);
-  const px = -dir.z * size * 0.4;
-  const pz = dir.x * size * 0.4;
-  const y = tip.y + 0.5;
+  const px = -dir.z * size * SANDBOX_PLAN_FEATURE.ARROWHEAD_HALF_WIDTH_RATIO;
+  const pz = dir.x * size * SANDBOX_PLAN_FEATURE.ARROWHEAD_HALF_WIDTH_RATIO;
+  const y = tip.y + SANDBOX_PLAN_FEATURE.BAND_ELEVATION_OFFSET;
   const positions = new Float32Array([
     tip.x,
     y,
@@ -380,12 +408,12 @@ function buildArrowhead(tip: Vector3, dir: Vector3, color: number, size = 10): M
     back.z - pz,
   ]);
   const geo = new BufferGeometry();
-  geo.setAttribute('position', new BufferAttribute(positions, 3));
+  geo.setAttribute('position', new BufferAttribute(positions, SANDBOX_PLAN_FEATURE.BEARING_PAD_LENGTH));
   geo.computeVertexNormals();
   return new Mesh(geo, new MeshBasicMaterial({ color, side: DoubleSide, depthWrite: false }));
 }
 
-const AXIS_COLOR = 0x7e57c2;
+const AXIS_COLOR = SANDBOX_PLAN_FEATURE.AXIS_COLOR;
 
 /** Axis of advance — a centerline + arrowhead at the final point + a translucent width
  * corridor (one flat quad per segment). */
@@ -403,38 +431,48 @@ export function buildAxisGroup(pts: Vector3[], name: string, geoFrame: GeoFrame)
   g.add(line);
 
   for (let i = 1; i < pts.length; i++) {
-    const band = buildBandSegment(pts[i - 1], pts[i], 8, AXIS_COLOR);
+    const band = buildBandSegment(pts[i - 1], pts[i], SANDBOX_PLAN_FEATURE.AXIS_BAND_HALF_WIDTH, AXIS_COLOR);
     if (band) g.add(band);
   }
 
   const last = pts[pts.length - 1];
   const prev = pts[pts.length - 2] ?? pts[0];
   const dir = new Vector3(last.x - prev.x, 0, last.z - prev.z);
-  if (dir.lengthSq() > 1e-9) {
+  if (dir.lengthSq() > SANDBOX_PLAN_FEATURE.AXIS_DIR_EPSILON) {
     dir.normalize();
     g.add(buildArrowhead(last, dir, AXIS_COLOR));
   }
 
-  for (const p of pts) g.add(marker(p, AXIS_COLOR, 1.5));
+  for (const p of pts) g.add(marker(p, AXIS_COLOR, SANDBOX_PLAN_FEATURE.AXIS_MARKER_SIZE));
   const bearing = computeBearingDeg(pts[0], last, geoFrame);
-  g.add(label(last.clone().add(new Vector3(0, 14, 0)), `AXIS ${name} · ${formatBearing(bearing)}`));
+  g.add(
+    label(
+      last.clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.AXIS_LABEL_Y_OFFSET, 0)),
+      `AXIS ${name} · ${formatBearing(bearing)}`
+    )
+  );
   return g;
 }
 
-const OBJECTIVE_COLOR = 0xffca28;
+const OBJECTIVE_COLOR = SANDBOX_PLAN_FEATURE.OBJECTIVE_COLOR;
 
 /** A named objective — a single point today (the area variant is a later-wave refinement). */
 export function buildObjectiveGroup(pts: Vector3[], name: string): Group {
   const point = pts[0];
   const g = new Group();
-  g.add(marker(point, OBJECTIVE_COLOR, 3));
-  g.add(label(point.clone().add(new Vector3(0, 14, 0)), `OBJ ${name}`));
+  g.add(marker(point, OBJECTIVE_COLOR, SANDBOX_PLAN_FEATURE.OBJECTIVE_MARKER_SIZE));
+  g.add(
+    label(
+      point.clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.OBJECTIVE_LABEL_Y_OFFSET, 0)),
+      `OBJ ${name}`
+    )
+  );
   return g;
 }
 
 // ---------- weapon/sensor range fans (todo 32 / C1) ----------
 
-const RANGE_FAN_COLOR = 0xff8a65;
+const RANGE_FAN_COLOR = SANDBOX_PLAN_FEATURE.RANGE_FAN_COLOR;
 const DEFAULT_SYSTEM_ID: SystemId = 'mortar81mm';
 
 /** Reads `metadata.systemId`, defensively falling back to a default system for
@@ -471,14 +509,14 @@ export function buildRangeFanGroup(pts: Vector3[], systemId: SystemId, geoFrame:
     shape.holes.push(hole);
   }
 
-  const geo = new ShapeGeometry(shape, 64);
+  const geo = new ShapeGeometry(shape, SANDBOX_PLAN_FEATURE.RANGE_FAN_SEGMENTS);
   geo.rotateX(-Math.PI / 2);
   const mesh = new Mesh(
     geo,
     new MeshBasicMaterial({
       color: RANGE_FAN_COLOR,
       transparent: true,
-      opacity: 0.18,
+      opacity: SANDBOX_PLAN_FEATURE.RANGE_FAN_OPACITY,
       side: DoubleSide,
       depthWrite: false,
     })
@@ -488,10 +526,10 @@ export function buildRangeFanGroup(pts: Vector3[], systemId: SystemId, geoFrame:
   const bearing = computeBearingDeg(center, bearingPt, geoFrame);
   const g = new Group();
   g.add(mesh);
-  g.add(marker(center, RANGE_FAN_COLOR, 2));
+  g.add(marker(center, RANGE_FAN_COLOR, EYE_HEIGHT));
   g.add(
     label(
-      center.clone().add(new Vector3(0, 20, 0)),
+      center.clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.RANGE_FAN_LABEL_Y_OFFSET, 0)),
       `${system.name} · ${fmtDist(system.minRangeM)}–${fmtDist(system.maxRangeM)} · ${formatBearing(bearing)}\n(geometric range only — no terrain masking)`
     )
   );
@@ -521,11 +559,11 @@ export function raycastLosBlockingHit(
   const tgt = tgtGround.clone().add(new Vector3(0, EYE_HEIGHT, 0));
   const dir = tgt.clone().sub(obs);
   const dist = dir.length();
-  if (dist < 1e-6) return null;
+  if (dist < SANDBOX_PLAN_FEATURE.BAND_EPSILON) return null;
   dir.normalize();
 
   raycaster.set(obs, dir);
-  raycaster.far = dist - 2;
+  raycaster.far = dist - SANDBOX_PLAN_FEATURE.LOS_RAYCAST_MARGIN;
   const hits = raycaster.intersectObject(tiles, true);
   return hits.length > 0 ? { point: hits[0].point, distance: hits[0].distance } : null;
 }
@@ -546,17 +584,17 @@ export function buildLosGroup(
   const blockedHit = raycastLosBlockingHit(obsGround, tgtGround, raycaster, tiles);
 
   const g = new Group();
-  g.add(marker(obs, 0xffffff));
+  g.add(marker(obs, SANDBOX_PLAN_FEATURE.LOS_OBSERVER_COLOR));
 
   if (!blockedHit) {
     const line = new Line(new BufferGeometry().setFromPoints([obs, tgt]), MAT_LOS_CLEAR);
     line.renderOrder = 999;
     g.add(line);
-    g.add(marker(tgt, 0x55ff55));
+    g.add(marker(tgt, SANDBOX_PLAN_FEATURE.LOS_CLEAR_COLOR));
     if (report) {
       g.add(
         label(
-          tgt.clone().add(new Vector3(0, 14, 0)),
+          tgt.clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.LOS_LABEL_Y_OFFSET, 0)),
           `CLEAR ${fmtDist(dist)} · ${formatBearing(bearing)}`
         )
       );
@@ -575,12 +613,18 @@ export function buildLosGroup(
   clearLine.renderOrder = 999;
   blockedLine.renderOrder = 999;
   g.add(clearLine, blockedLine);
-  g.add(marker(blockedHit.point, 0xff4444, 3));
-  g.add(marker(tgt, 0xff4444));
+  g.add(
+    marker(
+      blockedHit.point,
+      SANDBOX_PLAN_FEATURE.LOS_BLOCKED_COLOR,
+      SANDBOX_PLAN_FEATURE.LOS_BLOCKED_MARKER_SIZE
+    )
+  );
+  g.add(marker(tgt, SANDBOX_PLAN_FEATURE.LOS_BLOCKED_COLOR));
   if (report) {
     g.add(
       label(
-        blockedHit.point.clone().add(new Vector3(0, 14, 0)),
+        blockedHit.point.clone().add(new Vector3(0, SANDBOX_PLAN_FEATURE.LOS_LABEL_Y_OFFSET, 0)),
         `BLOCKED @ ${fmtDist(blockedHit.distance)} · ${formatBearing(bearing)}`
       )
     );

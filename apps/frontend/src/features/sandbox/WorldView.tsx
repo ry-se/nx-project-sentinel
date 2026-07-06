@@ -13,10 +13,8 @@ import {
   EyeOff,
   Flag,
   Footprints,
-  Gamepad2,
   Import,
   type LucideIcon,
-  Map,
   MapPin,
   Mountain,
   MousePointer2,
@@ -75,6 +73,8 @@ import { IntelImport } from './IntelImport';
 import { PanelRail } from './ui/PanelRail';
 import { PanelSection } from './ui/PanelSection';
 
+import { SANDBOX_COMMON, SANDBOX_WORLD_VIEW } from '@/constants';
+
 const KEY_STORAGE = 'google_tiles_key';
 
 // SPAWN_LOCATIONS imported from shared module
@@ -122,7 +122,17 @@ function getStoredKey(): string | null {
   return env ?? localStorage.getItem(KEY_STORAGE);
 }
 
-export function WorldView() {
+interface WorldViewProps {
+  onModeBadgeChange?: (state: { mode: SandboxMode; visible: boolean }) => void;
+  onPlanExportChange?: (state: {
+    visible: boolean;
+    disabled: boolean;
+    onExportGeoJSON: () => void;
+    onExportKML: () => void;
+  }) => void;
+}
+
+export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sandboxRef = useRef<Sandbox | null>(null);
 
@@ -149,7 +159,6 @@ export function WorldView() {
   const [unitAffiliation, setUnitAffiliationState] = useState<Affiliation>('friendly');
   const [unitEchelon, setUnitEchelonState] = useState<Echelon>('platoon');
   const [rangeFanSystemId, setRangeFanSystemIdState] = useState<SystemId>('mortar81mm');
-  const [mgrsHudOn, setMgrsHudOn] = useState(true);
   const [planVersion, setPlanVersion] = useState(0);
   const [planNameDraft, setPlanNameDraft] = useState('');
   const [classification, setClassificationState] =
@@ -184,6 +193,14 @@ export function WorldView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- featureVersion is the refresh signal (every phase mutation also calls onFeaturesChanged)
     [featureVersion]
   );
+
+  useEffect(() => {
+    onModeBadgeChange?.({ mode, visible: Boolean(apiKey && !fatal) });
+  }, [apiKey, fatal, mode, onModeBadgeChange]);
+
+  useEffect(() => {
+    return () => onModeBadgeChange?.({ mode: 'player', visible: false });
+  }, [onModeBadgeChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -345,6 +362,25 @@ export function WorldView() {
     [planNameDraft]
   );
 
+  useEffect(() => {
+    onPlanExportChange?.({
+      visible: Boolean(apiKey && !fatal),
+      disabled: features.length === 0,
+      onExportGeoJSON: () => exportPlanFile('geojson'),
+      onExportKML: () => exportPlanFile('kml'),
+    });
+  }, [apiKey, exportPlanFile, fatal, features.length, onPlanExportChange]);
+
+  useEffect(() => {
+    return () =>
+      onPlanExportChange?.({
+        visible: false,
+        disabled: true,
+        onExportGeoJSON: () => undefined,
+        onExportKML: () => undefined,
+      });
+  }, [onPlanExportChange]);
+
   const saveViewpoint = useCallback(() => {
     const trimmed = viewpointNameDraft.trim();
     if (!trimmed || !sandboxRef.current) return;
@@ -464,7 +500,7 @@ export function WorldView() {
         setArmedFeatureId(null);
         setFeatureVersion((v) => v + 1);
       }
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [armedFeatureId]);
 
@@ -479,7 +515,7 @@ export function WorldView() {
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setBriefState(sb.getBriefPlaybackState());
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
@@ -494,7 +530,7 @@ export function WorldView() {
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setTimelineState(sb.getTimelineState());
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
@@ -507,7 +543,7 @@ export function WorldView() {
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setRehearsing(sb.isRehearsing());
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
@@ -545,11 +581,11 @@ export function WorldView() {
     const elevations = elevationProfile.map((s) => s.elevationM);
     const minE = Math.min(...elevations);
     const maxE = Math.max(...elevations);
-    const range = Math.max(maxE - minE, 1e-3);
+    const range = Math.max(maxE - minE, SANDBOX_WORLD_VIEW.ELEVATION_EPSILON);
     const maxDist = elevationProfile[elevationProfile.length - 1].distanceAlongM;
 
     const toXY = (s: ElevationSample): [number, number] => [
-      (s.distanceAlongM / Math.max(maxDist, 1e-3)) * width,
+      (s.distanceAlongM / Math.max(maxDist, SANDBOX_WORLD_VIEW.ELEVATION_EPSILON)) * width,
       height - ((s.elevationM - minE) / range) * height,
     ];
 
@@ -598,7 +634,7 @@ export function WorldView() {
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setPose(sb.getCameraPose());
-    }, 500);
+    }, SANDBOX_WORLD_VIEW.CAMERA_POSE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal]);
 
@@ -607,7 +643,7 @@ export function WorldView() {
     if (!sb) return;
     void navigator.clipboard.writeText(JSON.stringify(sb.getCameraPose(), null, 2));
     setPoseCopied(true);
-    window.setTimeout(() => setPoseCopied(false), 1500);
+    window.setTimeout(() => setPoseCopied(false), SANDBOX_WORLD_VIEW.POSE_COPY_RESET_MS);
   };
 
   const submitKey = (): void => {
@@ -627,38 +663,15 @@ export function WorldView() {
     <div className="fixed inset-0">
       <canvas ref={canvasRef} className="block h-full w-full touch-none" />
 
-      {/* Classification banner (todo 22 invariant 1) — persistent top + bottom, standard
+      {/* Classification banner (todo 22 invariant 1) — persistent bottom marking, standard
           military marking placement, always visible in strategist mode so a plan is never
           silently unclassified (invariant 2 — default EXERCISE). */}
       {apiKey && !fatal && mode === 'strategist' && (
-        <>
-          <div
-            className="fixed inset-x-0 top-0 z-50 py-0.5 text-center text-xs font-bold tracking-widest text-white"
-            style={{ backgroundColor: CLASSIFICATION_COLOR[classification] }}
-          >
-            {classification}
-          </div>
-          <div
-            className="fixed inset-x-0 bottom-0 z-50 py-0.5 text-center text-xs font-bold tracking-widest text-white"
-            style={{ backgroundColor: CLASSIFICATION_COLOR[classification] }}
-          >
-            {classification}
-          </div>
-        </>
-      )}
-
-      {/* Mode badge */}
-      {apiKey && !fatal && (
-        <div className="fixed left-4 top-20 z-40">
-          <div className="rounded-box flex items-center gap-2 bg-base-100 px-3 py-2 text-sm font-semibold text-primary shadow-md">
-            {mode === 'strategist' ? (
-              <Satellite className="h-4 w-4" />
-            ) : (
-              <Gamepad2 className="h-4 w-4" />
-            )}
-            {mode === 'strategist' ? 'STRATEGIST' : 'PLAYER'}
-            <span className="font-normal text-base-content/40">TAB to switch</span>
-          </div>
+        <div
+          className="fixed inset-x-0 bottom-0 z-50 py-0.5 text-center text-xs font-bold tracking-widest text-white"
+          style={{ backgroundColor: CLASSIFICATION_COLOR[classification] }}
+        >
+          {classification}
         </div>
       )}
 
@@ -674,7 +687,7 @@ export function WorldView() {
         </div>
       )}
 
-      {/* Strategist left rail — Tools, Features, Plans, Brief sequence, in that order:
+      {/* Strategist left rail — Tools, Features, Plans, in that order:
           draw/measure -> see what you drew -> persist it -> sequence a briefing. Each used
           to be an independently `fixed`-positioned panel with a hardcoded left offset;
           Plans (`left-[28rem]`) and Brief sequence (`left-[34rem]`) genuinely overlapped
@@ -749,16 +762,6 @@ export function WorldView() {
               }}
             >
               <Tag className="h-4 w-4" /> Labels {labelsOn && <Check className="h-3 w-3" />}
-            </button>
-            <button
-              className="btn btn-ghost btn-sm justify-start font-normal"
-              onClick={() => {
-                const next = !mgrsHudOn;
-                setMgrsHudOn(next);
-                sandboxRef.current?.setMgrsHudEnabled(next);
-              }}
-            >
-              <Map className="h-4 w-4" /> MGRS HUD {mgrsHudOn && <Check className="h-3 w-3" />}
             </button>
             <button
               className="btn btn-ghost btn-sm justify-start font-normal text-error hover:bg-error/10"
@@ -945,29 +948,10 @@ export function WorldView() {
                 </button>
               </div>
             ))}
-            {/* Hand-off export (todo 23/24) — a subordinate opens the file elsewhere, no
-                live session needed. Reads the LIVE feature set, not a saved snapshot. */}
-            <div className="flex gap-1 px-2 pt-1">
-              <button
-                className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
-                onClick={() => exportPlanFile('geojson')}
-                disabled={features.length === 0}
-                aria-label="Export plan as GeoJSON"
-              >
-                Export GeoJSON
-              </button>
-              <button
-                className="btn btn-xs flex-1 border-none bg-base-300 disabled:opacity-30"
-                onClick={() => exportPlanFile('kml')}
-                disabled={features.length === 0}
-                aria-label="Export plan as KML"
-              >
-                Export KML
-              </button>
+            <div className="divider my-1" />
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
+              Phases ({phases.length})
             </div>
-          </PanelSection>
-
-          <PanelSection title={`Phases (${phases.length})`}>
             <div className="flex gap-1 px-2">
               <input
                 aria-label="Phase name"
@@ -1094,9 +1078,11 @@ export function WorldView() {
                 </div>
               </div>
             )}
-          </PanelSection>
 
-          <PanelSection title="Brief sequence">
+            <div className="divider my-1" />
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
+              Brief sequence
+            </div>
             <div className="flex gap-1 px-2">
               <input
                 aria-label="Viewpoint name"
@@ -1313,7 +1299,11 @@ export function WorldView() {
                   </div>
                   {exposureResult && (
                     <div className="px-2 pb-1 text-xs">
-                      <strong>{(exposureResult.fraction * 100).toFixed(0)}%</strong> of route
+                      <strong>
+                        {(exposureResult.fraction * SANDBOX_COMMON.PERCENT_MULTIPLIER).toFixed(0)}
+                        %
+                      </strong>{' '}
+                      of route
                       exposed{' '}
                       <span className="text-[9px] text-base-content/40">
                         (computed from {features.find((f) => f.id === exposureThreatId)?.name}'s
@@ -1388,22 +1378,26 @@ export function WorldView() {
               Camera pose
             </div>
             <div>
-              lat {pose.camera.geo.lat.toFixed(6)} lon {pose.camera.geo.lon.toFixed(6)}
+              lat {pose.camera.geo.lat.toFixed(SANDBOX_WORLD_VIEW.CAMERA_POSE_DECIMALS)} lon{' '}
+              {pose.camera.geo.lon.toFixed(SANDBOX_WORLD_VIEW.CAMERA_POSE_DECIMALS)}
             </div>
             <div>
               alt {pose.camera.geo.altM.toFixed(0)} m · hdg {pose.camera.geo.headingDeg.toFixed(1)}°
               · pitch {pose.camera.geo.pitchDeg.toFixed(1)}° · fov {pose.camera.fovDeg.toFixed(0)}°
             </div>
           </div>
-          <div className="flex gap-1">
+          <div className="grid grid-cols-2 gap-1">
             <button
-              className="btn btn-sm bg-base-100 shadow-md"
+              className="btn btn-sm w-full min-w-0 bg-base-100 px-2 shadow-md"
               onClick={() => sandboxRef.current?.captureShot()}
               title="Download a clean tiles-only PNG + matching pose JSON"
             >
               <Camera className="h-4 w-4" /> Capture
             </button>
-            <button className="btn btn-sm bg-base-100 shadow-md" onClick={copyPose}>
+            <button
+              className="btn btn-sm w-full min-w-0 bg-base-100 px-2 shadow-md"
+              onClick={copyPose}
+            >
               {poseCopied ? (
                 <>
                   <Check className="h-4 w-4" /> Copied
@@ -1415,13 +1409,13 @@ export function WorldView() {
               )}
             </button>
             <button
-              className="btn btn-primary btn-sm shadow-md"
+              className="btn btn-primary btn-sm w-full min-w-0 px-2 shadow-md"
               onClick={() => setShowImport(true)}
             >
               <Import className="h-4 w-4" /> Import intel
             </button>
             <button
-              className="btn btn-sm bg-base-100 text-error shadow-md"
+              className="btn btn-sm w-full min-w-0 bg-base-100 px-2 text-error shadow-md"
               onClick={() => sandboxRef.current?.clearDetections()}
               title="Remove deployed detections"
             >

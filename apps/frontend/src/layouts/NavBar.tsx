@@ -1,21 +1,38 @@
 import { useState } from 'react';
+import { Download, Gamepad2, Satellite } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import type { SandboxMode } from '../features/sandbox/engine/createSandbox';
 import {
   getStoredSpawnKey,
   setStoredSpawnKey,
   SPAWN_LOCATIONS,
 } from '../features/sandbox/spawnLocations';
 
-export function NavBar() {
+interface NavBarProps {
+  sandboxModeBadge?: {
+    mode: SandboxMode;
+    visible: boolean;
+  };
+  sandboxPlanExport?: {
+    visible: boolean;
+    disabled: boolean;
+    onExportGeoJSON: () => void;
+    onExportKML: () => void;
+  };
+}
+
+export function NavBar({ sandboxModeBadge, sandboxPlanExport }: NavBarProps = {}) {
   const [spawn, setSpawn] = useState(getStoredSpawnKey());
+  const exportDisabled = !sandboxPlanExport?.visible || sandboxPlanExport.disabled;
+
   return (
     <div style={{ width: '100vw' }} className="fixed top-0 left-0 right-0 z-50 px-4 pt-3">
       <div className="navbar bg-base-100 shadow-md rounded-box min-h-0 py-2 px-3">
         {/* Left: Logo + breadcrumb */}
         <div className="navbar-start gap-3">
           <div className="avatar placeholder">
-            <div className="bg-indigo-600 text-white rounded-lg w-8 text-sm font-bold flex items-center justify-center">
+            <div className="bg-primary text-black rounded-lg w-8 text-sm font-bold flex items-center justify-center">
               <span>S</span>
             </div>
           </div>
@@ -29,26 +46,23 @@ export function NavBar() {
             <span className="text-base-content/30">·</span>
             <span className="text-base-content/40">Sandbox 03</span>
           </div>
+
+          {sandboxModeBadge?.visible && (
+            <div className="rounded-box flex items-center gap-2 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+              {sandboxModeBadge.mode === 'strategist' ? (
+                <Satellite className="h-3.5 w-3.5" />
+              ) : (
+                <Gamepad2 className="h-3.5 w-3.5" />
+              )}
+              {sandboxModeBadge.mode === 'strategist' ? 'STRATEGIST' : 'PLAYER'}
+              <span className="font-normal text-base-content/40">TAB to switch</span>
+            </div>
+          )}
         </div>
 
         {/* Right: Actions */}
         <div className="navbar-end gap-1 items-center">
-          <button className="btn btn-sm btn-ghost flex items-center gap-1.5 text-red-500 hover:bg-red-50">
-            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
-            <span className="font-medium">Detections</span>
-            <span className="bg-red-100 text-red-600 text-xs font-semibold px-1.5 py-0.5 rounded">
-              6
-            </span>
-          </button>
-
-          <div className="divider divider-horizontal mx-0" />
-
-          <button className="btn btn-sm btn-ghost font-normal">Wargame</button>
-          <button className="btn btn-sm btn-ghost font-normal">Terrain</button>
-          <button className="btn btn-sm btn-ghost font-normal">Replay</button>
-
-          <div className="divider divider-horizontal mx-0" />
-
+          
           <div className="mr-2">
             <select
               className="select select-sm select-bordered"
@@ -78,21 +92,43 @@ export function NavBar() {
 
           <div className="divider divider-horizontal mx-0" />
 
-          <button className="btn btn-sm bg-indigo-600 hover:bg-indigo-700 text-white border-none gap-1.5">
-            <svg
-              stroke="currentColor"
-              fill="currentColor"
-              strokeWidth="0"
-              viewBox="4 4 18 18"
-              height="1em"
-              width="1em"
-              xmlns="http://www.w3.org/2000/svg"
+          <div className="dropdown dropdown-end">
+            <button
+              type="button"
+              tabIndex={0}
+              className="btn btn-sm gap-1.5 border-none bg-primary text-black shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-lg active:translate-y-0 disabled:hover:translate-y-0 disabled:hover:shadow-sm"
+              disabled={exportDisabled}
+              aria-label="Export"
             >
-              <path fill="none" d="M0 0h24v24H0z" />
-              <path d="M18 15v3H6v-3H4v3c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-3h-2zM7 9l1.41 1.41L11 7.83V16h2V7.83l2.59 2.58L17 9l-5-5-5 5z" />
-            </svg>
-            Export
-          </button>
+              <Download className="h-4 w-4" />
+              Export
+            </button>
+            <ul
+              tabIndex={0}
+              className="dropdown-content menu z-[60] mt-2 w-44 rounded-box bg-base-100 p-2 shadow-xl"
+            >
+              <li>
+                <button
+                  type="button"
+                  disabled={exportDisabled}
+                  aria-label="Export plan as GeoJSON"
+                  onClick={() => sandboxPlanExport?.onExportGeoJSON()}
+                >
+                  GeoJSON
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  disabled={exportDisabled}
+                  aria-label="Export plan as KML"
+                  onClick={() => sandboxPlanExport?.onExportKML()}
+                >
+                  KML
+                </button>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

@@ -70,6 +70,8 @@ import {
   type Provenance,
 } from './classification';
 
+import { SANDBOX_STRATEGIST } from '@/constants';
+
 export type StratTool =
   | 'select'
   | 'distance'
@@ -307,7 +309,11 @@ export class StrategistController {
   public enable(center: Vector3): void {
     this.enabled = true;
     this.pivot.copy(center);
-    this.camera.position.set(center.x + 100, center.y + 500, center.z + 380);
+    this.camera.position.set(
+      center.x + SANDBOX_STRATEGIST.ENABLE_CAMERA_OFFSET_X,
+      center.y + SANDBOX_STRATEGIST.ENABLE_CAMERA_OFFSET_Y,
+      center.z + SANDBOX_STRATEGIST.ENABLE_CAMERA_OFFSET_Z
+    );
     this.camera.lookAt(this.pivot);
     this.setTool('select');
   }
@@ -528,7 +534,10 @@ export class StrategistController {
   /** Called every frame from the render loop (`createSandbox.ts`) — applies the current
    * interpolated pose to the camera when a brief transition is in progress. */
   public update(nowMs: number): void {
-    const dtSeconds = this.lastUpdateMs === null ? 0 : (nowMs - this.lastUpdateMs) / 1000;
+    const dtSeconds =
+      this.lastUpdateMs === null
+        ? 0
+        : (nowMs - this.lastUpdateMs) / SANDBOX_STRATEGIST.UPDATE_MS_PER_SECOND;
     this.lastUpdateMs = nowMs;
 
     const pose = this.briefStepper.tick(nowMs);
@@ -863,7 +872,11 @@ export class StrategistController {
     const f = this.features.find((f) => f.id === id);
     const firstLocal = f?.planFeature.points.local[0];
     if (!firstLocal) return;
-    const ring = marker(new Vector3(firstLocal.x, firstLocal.y, firstLocal.z), 0xffff00, 3.5);
+    const ring = marker(
+      new Vector3(firstLocal.x, firstLocal.y, firstLocal.z),
+      SANDBOX_STRATEGIST.SELECTION_COLOR,
+      SANDBOX_STRATEGIST.SELECTION_MARKER_SIZE
+    );
     ring.renderOrder = 1002;
     this.selectionRoot.add(ring);
     this.selectionRoot.traverse((o) => o.layers.set(1));
@@ -911,7 +924,8 @@ export class StrategistController {
       if (this.dragButton === 0) {
         const dx = e.clientX - this.lastX;
         const dy = e.clientY - this.lastY;
-        if (Math.abs(dx) + Math.abs(dy) > 3) this.dragged = true;
+        if (Math.abs(dx) + Math.abs(dy) > SANDBOX_STRATEGIST.DRAG_THRESHOLD_PX)
+          this.dragged = true;
         this.groundWalkController.look(
           dx * GROUND_WALK_LOOK_SENSITIVITY,
           dy * GROUND_WALK_LOOK_SENSITIVITY
@@ -925,7 +939,8 @@ export class StrategistController {
     if (this.dragButton === 0 || this.dragButton === 2) {
       const dx = e.clientX - this.lastX;
       const dy = e.clientY - this.lastY;
-      if (Math.abs(dx) + Math.abs(dy) > 3) this.dragged = true;
+      if (Math.abs(dx) + Math.abs(dy) > SANDBOX_STRATEGIST.DRAG_THRESHOLD_PX)
+        this.dragged = true;
 
       if (this.dragged) {
         if (this.dragButton === 0) this.pan(e);
@@ -938,7 +953,7 @@ export class StrategistController {
 
     // throttled — raycasts against the tileset. Always tracks the MGRS cursor readout
     // (todo 15); only feeds the draft preview when a draft is actually in progress.
-    if (performance.now() - this.lastPreviewAt > 33) {
+    if (performance.now() - this.lastPreviewAt > SANDBOX_STRATEGIST.PREVIEW_THROTTLE_MS) {
       this.lastPreviewAt = performance.now();
       const hit = this.pick(e);
       this.cursorGround = hit;
@@ -1006,8 +1021,14 @@ export class StrategistController {
     const radius = offset.length();
     let theta = Math.atan2(offset.x, offset.z);
     let phi = Math.acos(Math.max(-1, Math.min(1, offset.y / radius)));
-    theta -= dx * 0.005;
-    phi = Math.max(0.15, Math.min(1.45, phi + dy * 0.005));
+    theta -= dx * SANDBOX_STRATEGIST.ORBIT_SENSITIVITY;
+    phi = Math.max(
+      SANDBOX_STRATEGIST.ORBIT_PHI_MIN,
+      Math.min(
+        SANDBOX_STRATEGIST.ORBIT_PHI_MAX,
+        phi + dy * SANDBOX_STRATEGIST.ORBIT_SENSITIVITY
+      )
+    );
     offset.set(
       radius * Math.sin(phi) * Math.sin(theta),
       radius * Math.cos(phi),
@@ -1022,9 +1043,12 @@ export class StrategistController {
     this.cancelBriefPlayback(); // manual input cancels playback cleanly (invariant 3)
     e.preventDefault();
     this.raycaster.setFromCamera(this.ndc(e), this.camera);
-    const speed = Math.max(this.camera.position.y - this.pivot.y, 60) * 0.0012;
+    const speed =
+      Math.max(this.camera.position.y - this.pivot.y, SANDBOX_STRATEGIST.WHEEL_MIN_HEIGHT) *
+      SANDBOX_STRATEGIST.WHEEL_SPEED_SCALE;
     this.camera.position.addScaledVector(this.raycaster.ray.direction, -e.deltaY * speed);
-    if (this.camera.position.y < this.pivot.y + 25) this.camera.position.y = this.pivot.y + 25;
+    if (this.camera.position.y < this.pivot.y + SANDBOX_STRATEGIST.WHEEL_MIN_HEIGHT_ABOVE_PIVOT)
+      this.camera.position.y = this.pivot.y + SANDBOX_STRATEGIST.WHEEL_MIN_HEIGHT_ABOVE_PIVOT;
   };
 
   // ---------- drafting ----------
@@ -1057,8 +1081,11 @@ export class StrategistController {
         this.onStatus(`${this.draft.length} corners — right-click to close`);
         break;
       case 'arc':
-        if (this.draft.length === 3) this.finalizeArc();
-        else this.onStatus(`FIRE ARC — point ${this.draft.length + 1} of 3`);
+        if (this.draft.length === SANDBOX_STRATEGIST.ARC_POINT_COUNT) this.finalizeArc();
+        else
+          this.onStatus(
+            `FIRE ARC — point ${this.draft.length + 1} of ${SANDBOX_STRATEGIST.ARC_POINT_COUNT}`
+          );
         break;
       case 'los':
         if (this.draft.length === 2) this.finalizeLos();
@@ -1115,7 +1142,8 @@ export class StrategistController {
 
   private finishPolyline(): void {
     if (this.tool === 'distance' && this.draft.length >= 2) this.finalizeDistance();
-    else if (this.tool === 'focus' && this.draft.length >= 3) this.finalizeFocus();
+    else if (this.tool === 'focus' && this.draft.length >= SANDBOX_STRATEGIST.FOCUS_MIN_POINTS)
+      this.finalizeFocus();
     else if (isLinearMeasureTool(this.tool) && this.draft.length >= 2) {
       this.finalizeLinearMeasure(this.tool);
     } else if (this.tool === 'axis' && this.draft.length >= 2) this.finalizeAxis();
@@ -1155,7 +1183,7 @@ export class StrategistController {
       if (this.draft.length === 1 && this.hover) {
         this.viewshed.aim(this.draft[0], this.hover);
       }
-      this.previewRoot.add(marker(this.draft[0], 0xffaa33));
+      this.previewRoot.add(marker(this.draft[0], SANDBOX_STRATEGIST.PREVIEW_MARKER_COLOR));
       this.previewRoot.traverse((o) => o.layers.set(1));
       return;
     }
@@ -1165,7 +1193,7 @@ export class StrategistController {
       line.renderOrder = 999;
       this.previewRoot.add(line);
     }
-    for (const p of this.draft) this.previewRoot.add(marker(p, 0x35d4ff));
+    for (const p of this.draft) this.previewRoot.add(marker(p, SANDBOX_STRATEGIST.DRAFT_MARKER_COLOR));
     this.previewRoot.traverse((o) => o.layers.set(1));
   }
 

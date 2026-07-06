@@ -1,5 +1,7 @@
 import { CanvasTexture, Group, Sprite, SpriteMaterial, Vector3 } from 'three';
 
+import { SANDBOX_MISC } from '@/constants';
+
 export type Affiliation = 'friendly' | 'enemy' | 'neutral';
 export type Echelon =
   | 'team'
@@ -70,43 +72,62 @@ export function readUnitMetadata(metadata: Record<string, unknown>): UnitMetadat
 
 function buildSymbolSprite(affiliation: Affiliation, echelon: Echelon, text: string): Sprite {
   const color = AFFILIATION_COLOR[affiliation];
-  const colorHex = `#${color.toString(16).padStart(6, '0')}`;
+  const colorHex = `#${color
+    .toString(SANDBOX_MISC.UNIT_SYMBOL_HEX_RADIX)
+    .padStart(SANDBOX_MISC.UNIT_SYMBOL_HEX_LENGTH, '0')}`;
 
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
+  canvas.width = SANDBOX_MISC.UNIT_SYMBOL_CANVAS;
+  canvas.height = SANDBOX_MISC.UNIT_SYMBOL_CANVAS;
   const ctx = canvas.getContext('2d')!;
 
   // frame
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(30, 70, 196, 130);
+  ctx.fillRect(
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_X,
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_Y,
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_W,
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_H
+  );
   ctx.strokeStyle = colorHex;
-  ctx.lineWidth = 10;
-  ctx.strokeRect(30, 70, 196, 130);
+  ctx.lineWidth = SANDBOX_MISC.UNIT_SYMBOL_FRAME_STROKE_WIDTH;
+  ctx.strokeRect(
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_X,
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_Y,
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_W,
+    SANDBOX_MISC.UNIT_SYMBOL_FRAME_H
+  );
 
   // echelon ticks (dots) above the frame
   const ticks = echelonTickCount(echelon);
-  const spacing = 22;
-  const startX = 128 - ((ticks - 1) * spacing) / 2;
+  const spacing = SANDBOX_MISC.UNIT_SYMBOL_ECHELON_SPACING;
+  const startX =
+    SANDBOX_MISC.UNIT_SYMBOL_CENTER_X - ((ticks - 1) * spacing) / 2;
   ctx.fillStyle = colorHex;
   for (let i = 0; i < ticks; i++) {
     ctx.beginPath();
-    ctx.arc(startX + i * spacing, 40, 7, 0, Math.PI * 2);
+    ctx.arc(
+      startX + i * spacing,
+      SANDBOX_MISC.UNIT_SYMBOL_ECHELON_Y,
+      SANDBOX_MISC.UNIT_SYMBOL_ECHELON_RADIUS,
+      0,
+      Math.PI * 2
+    );
     ctx.fill();
   }
 
   // unit designator label
-  ctx.font = 'bold 42px monospace';
+  ctx.font = `bold ${SANDBOX_MISC.UNIT_SYMBOL_FONT_SIZE}px monospace`;
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, 128, 150);
+  ctx.fillText(text, SANDBOX_MISC.UNIT_SYMBOL_CENTER_X, SANDBOX_MISC.UNIT_SYMBOL_LABEL_Y);
 
   const sprite = new Sprite(
     new SpriteMaterial({ map: new CanvasTexture(canvas), depthTest: false, transparent: true })
   );
-  const w = 26;
+  const w = SANDBOX_MISC.UNIT_SYMBOL_SPRITE_WIDTH;
   sprite.scale.set(w, w * (canvas.height / canvas.width), 1);
-  sprite.renderOrder = 1000; // above ground features (invariant 3)
+  sprite.renderOrder = SANDBOX_MISC.UNIT_SYMBOL_RENDER_ORDER; // above ground features (invariant 3)
   return sprite;
 }
 

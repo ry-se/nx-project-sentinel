@@ -4,10 +4,12 @@ import {
 } from 'three'
 import type { TilesRenderer } from '3d-tiles-renderer'
 
+import { SANDBOX_MISC } from '@/constants'
+
 const CACHE_KEY = 'osm_labels_cache_v1'
-const MAX_LABELS = 90
-const VISIBLE_RANGE = 2600   // hide labels beyond this camera distance (m)
-const LABEL_LIFT = 22        // metres above the mesh surface
+const MAX_LABELS = SANDBOX_MISC.LABEL_MAX_LABELS
+const VISIBLE_RANGE = SANDBOX_MISC.LABEL_VISIBLE_RANGE_M   // hide labels beyond this camera distance (m)
+const LABEL_LIFT = SANDBOX_MISC.LABEL_LIFT_M        // metres above the mesh surface
 
 interface POI {
   name: string
@@ -89,15 +91,15 @@ export class LabelManager {
     if (!this.visible) return
 
     const now = performance.now()
-    if (this.unclamped.length > 0 && now - this.lastClampAt > 800) {
+    if (this.unclamped.length > 0 && now - this.lastClampAt > SANDBOX_MISC.LABEL_CLAMP_INTERVAL_MS) {
       this.lastClampAt = now
       // clamp a few per cycle — raycasts against the tileset aren't free
-      const batch = this.unclamped.splice(0, 12)
+      const batch = this.unclamped.splice(0, SANDBOX_MISC.LABEL_CLAMP_BATCH_SIZE)
       for (const sprite of batch) {
         const origin = sprite.position.clone()
-        origin.y += 600
+        origin.y += SANDBOX_MISC.LABEL_CLAMP_RAYCAST_START_M
         this.raycaster.set(origin, new Vector3(0, -1, 0))
-        this.raycaster.far = 1500
+        this.raycaster.far = SANDBOX_MISC.LABEL_CLAMP_RAYCAST_FAR_M
         const hits = this.raycaster.intersectObject(this.tiles.group, true)
         if (hits.length > 0) {
           sprite.position.y = hits[0].point.y + LABEL_LIFT
@@ -126,7 +128,7 @@ async function fetchPOIs(lat: number, lon: number): Promise<POI[]> {
     try { return JSON.parse(cached) as POI[] } catch { localStorage.removeItem(CACHE_KEY) }
   }
 
-  const d = 0.014 // ≈ 1.5 km half-extent
+  const d = SANDBOX_MISC.LABEL_BBOX_HALF_EXTENT_DEG // ≈ 1.5 km half-extent
   const bbox = `${lat - d},${lon - d},${lat + d},${lon + d}`
   const query = `
     [out:json][timeout:30];
@@ -171,8 +173,8 @@ async function fetchPOIs(lat: number, lon: number): Promise<POI[]> {
     if (tags.place) { kind = 'place'; priority = 0 }
     else if (tags.tourism) { kind = 'tourism'; priority = 1 }
     else if (tags.historic) { kind = 'historic'; priority = 2 }
-    else if (tags.man_made === 'bridge') { kind = 'bridge'; priority = 3 }
-    else if (tags.leisure) { kind = 'leisure'; priority = 3 }
+    else if (tags.man_made === 'bridge') { kind = 'bridge'; priority = SANDBOX_MISC.LABEL_LOW_PRIORITY }
+    else if (tags.leisure) { kind = 'leisure'; priority = SANDBOX_MISC.LABEL_LOW_PRIORITY }
 
     pois.push({ name, lat: plat, lon: plon, kind, priority })
   }
@@ -188,20 +190,23 @@ async function fetchPOIs(lat: number, lon: number): Promise<POI[]> {
 function makeLabelSprite(text: string): Sprite {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')!
-  ctx.font = '600 34px system-ui, sans-serif'
-  const w = Math.min(Math.ceil(ctx.measureText(text).width) + 28, 640)
+  ctx.font = `600 ${SANDBOX_MISC.LABEL_FONT_SIZE}px system-ui, sans-serif`
+  const w = Math.min(
+    Math.ceil(ctx.measureText(text).width) + SANDBOX_MISC.LABEL_PADDING_X,
+    SANDBOX_MISC.LABEL_CANVAS_WIDTH,
+  )
   canvas.width = w
-  canvas.height = 56
+  canvas.height = SANDBOX_MISC.LABEL_CANVAS_HEIGHT
 
   const c = canvas.getContext('2d')!
-  c.font = '600 34px system-ui, sans-serif'
+  c.font = `600 ${SANDBOX_MISC.LABEL_FONT_SIZE}px system-ui, sans-serif`
   c.textBaseline = 'middle'
-  c.lineWidth = 7
+  c.lineWidth = SANDBOX_MISC.LABEL_STROKE_WIDTH
   c.lineJoin = 'round'
   c.strokeStyle = 'rgba(10,14,18,0.95)'
   c.fillStyle = '#ffffff'
-  c.strokeText(text, 14, 30)
-  c.fillText(text, 14, 30)
+  c.strokeText(text, SANDBOX_MISC.LABEL_MARGIN_X, SANDBOX_MISC.LABEL_TEXT_Y)
+  c.fillText(text, SANDBOX_MISC.LABEL_MARGIN_X, SANDBOX_MISC.LABEL_TEXT_Y)
 
   const sprite = new Sprite(new SpriteMaterial({
     map: new CanvasTexture(canvas),
@@ -210,8 +215,8 @@ function makeLabelSprite(text: string): Sprite {
     transparent: true,
   }))
   // scale.y is roughly fraction of viewport height
-  const h = 0.028
+  const h = SANDBOX_MISC.LABEL_SPRITE_SCREEN_HEIGHT
   sprite.scale.set(h * (canvas.width / canvas.height), h, 1)
-  sprite.renderOrder = 950
+  sprite.renderOrder = SANDBOX_MISC.LABEL_RENDER_ORDER
   return sprite
 }

@@ -14,6 +14,8 @@ import {
 
 import type { ModelLibrary } from './modelCatalog';
 
+import { SANDBOX_DETECTIONS } from '@/constants';
+
 export type DetectionClass = 'armored_fighting_vehicle' | 'light_military_vehicle' | 'aircraft';
 
 export const DETECTION_CLASSES: Array<{ id: DetectionClass; label: string }> = [
@@ -48,15 +50,18 @@ export interface SentinelDetection {
   uncertainty_m?: number;
 }
 
-const HOSTILE_RED = 0x8c1f1f;
-const HOSTILE_DARK = 0x4d1212;
+const HOSTILE_RED = SANDBOX_DETECTIONS.HOSTILE_RED;
+const HOSTILE_DARK = SANDBOX_DETECTIONS.HOSTILE_DARK;
 
 /** Maps detection confidence [0,1] to ring opacity so low-confidence detections render
  * visibly fainter than high-confidence ones. 1.0 confidence -> 0.7 opacity, matching the
  * pre-W4 constant so fully-confident (and manual) detections render unchanged. */
 export function confidenceToRingOpacity(confidence: number): number {
   const clamped = Math.min(1, Math.max(0, confidence));
-  return 0.2 + clamped * 0.5;
+  return (
+    SANDBOX_DETECTIONS.CONFIDENCE_MIN_OPACITY +
+    clamped * SANDBOX_DETECTIONS.CONFIDENCE_OPACITY_RANGE
+  );
 }
 
 const CLASS_TO_ASSET: Record<DetectionClass, string> = {
@@ -86,15 +91,19 @@ export class DetectionLayer {
     group.add(this.lib.instance(CLASS_TO_ASSET[cls], () => buildModel(cls), HOSTILE_RED));
 
     const ring = new Mesh(
-      new RingGeometry(4.2, 4.8, 32),
+      new RingGeometry(
+        SANDBOX_DETECTIONS.RING_INNER_RADIUS,
+        SANDBOX_DETECTIONS.RING_OUTER_RADIUS,
+        SANDBOX_DETECTIONS.RING_SEGMENTS
+      ),
       new MeshStandardMaterial({
-        color: 0xff3b30,
+        color: SANDBOX_DETECTIONS.RING_COLOR,
         transparent: true,
         opacity: confidenceToRingOpacity(opts?.confidence ?? 1.0),
       })
     );
     ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.15;
+    ring.position.y = SANDBOX_DETECTIONS.RING_Y;
     group.add(ring);
 
     const label = opts?.uncertaintyM !== undefined ? `${name} ±${opts.uncertaintyM}m` : name;
@@ -102,7 +111,7 @@ export class DetectionLayer {
 
     group.position.copy(localPos);
     group.rotation.y = localYaw;
-    group.traverse((o) => o.layers.set(1));
+    group.traverse((o) => o.layers.set(SANDBOX_DETECTIONS.MODEL_LAYER));
     this.root.add(group);
   }
 
@@ -121,28 +130,86 @@ function buildModel(cls: DetectionClass): Group {
   const dark = new MeshStandardMaterial({ color: HOSTILE_DARK, roughness: 0.9 });
 
   if (cls === 'armored_fighting_vehicle') {
-    const hull = new Mesh(new BoxGeometry(3.5, 1.2, 6.0), body);
-    hull.position.y = 0.6;
-    const turret = new Mesh(new BoxGeometry(2.4, 0.8, 3.0), body);
-    turret.position.set(0, 1.6, -0.3);
-    const barrel = new Mesh(new CylinderGeometry(0.14, 0.16, 4.2, 10), dark);
+    const hull = new Mesh(
+      new BoxGeometry(
+        SANDBOX_DETECTIONS.TANK_HULL_W,
+        SANDBOX_DETECTIONS.TANK_HULL_H,
+        SANDBOX_DETECTIONS.TANK_HULL_D
+      ),
+      body
+    );
+    hull.position.y = SANDBOX_DETECTIONS.TANK_HULL_Y;
+    const turret = new Mesh(
+      new BoxGeometry(
+        SANDBOX_DETECTIONS.TANK_TURRET_W,
+        SANDBOX_DETECTIONS.TANK_TURRET_H,
+        SANDBOX_DETECTIONS.TANK_TURRET_D
+      ),
+      body
+    );
+    turret.position.set(0, SANDBOX_DETECTIONS.TANK_TURRET_Y, SANDBOX_DETECTIONS.TANK_TURRET_Z);
+    const barrel = new Mesh(
+      new CylinderGeometry(
+        SANDBOX_DETECTIONS.TANK_BARREL_RADIUS_TOP,
+        SANDBOX_DETECTIONS.TANK_BARREL_RADIUS_BOTTOM,
+        SANDBOX_DETECTIONS.TANK_BARREL_LENGTH,
+        SANDBOX_DETECTIONS.TANK_BARREL_SEGMENTS
+      ),
+      dark
+    );
     barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 1.7, 2.4);
+    barrel.position.set(0, SANDBOX_DETECTIONS.TANK_BARREL_Y, SANDBOX_DETECTIONS.TANK_BARREL_Z);
     g.add(hull, turret, barrel);
   } else if (cls === 'light_military_vehicle') {
-    const hull = new Mesh(new BoxGeometry(2.0, 1.0, 4.2), body);
-    hull.position.y = 0.8;
-    const cab = new Mesh(new BoxGeometry(1.8, 0.7, 1.6), dark);
-    cab.position.set(0, 1.6, 0.8);
+    const hull = new Mesh(
+      new BoxGeometry(
+        SANDBOX_DETECTIONS.LMV_HULL_W,
+        SANDBOX_DETECTIONS.LMV_HULL_H,
+        SANDBOX_DETECTIONS.LMV_HULL_D
+      ),
+      body
+    );
+    hull.position.y = SANDBOX_DETECTIONS.LMV_HULL_Y;
+    const cab = new Mesh(
+      new BoxGeometry(
+        SANDBOX_DETECTIONS.LMV_CAB_W,
+        SANDBOX_DETECTIONS.LMV_CAB_H,
+        SANDBOX_DETECTIONS.LMV_CAB_D
+      ),
+      dark
+    );
+    cab.position.set(0, SANDBOX_DETECTIONS.LMV_CAB_Y, SANDBOX_DETECTIONS.LMV_CAB_Z);
     g.add(hull, cab);
   } else {
-    const fuselage = new Mesh(new CylinderGeometry(0.5, 0.3, 8, 10), body);
+    const fuselage = new Mesh(
+      new CylinderGeometry(
+        SANDBOX_DETECTIONS.AIRCRAFT_FUSELAGE_RADIUS_TOP,
+        SANDBOX_DETECTIONS.AIRCRAFT_FUSELAGE_RADIUS_BOTTOM,
+        SANDBOX_DETECTIONS.AIRCRAFT_FUSELAGE_LENGTH,
+        SANDBOX_DETECTIONS.AIRCRAFT_FUSELAGE_SEGMENTS
+      ),
+      body
+    );
     fuselage.rotation.x = Math.PI / 2;
-    fuselage.position.y = 1.2;
-    const wing = new Mesh(new BoxGeometry(8, 0.12, 2.2), body);
-    wing.position.y = 1.0;
-    const fin = new Mesh(new BoxGeometry(0.1, 1.6, 1.3), dark);
-    fin.position.set(0, 2.0, -3.5);
+    fuselage.position.y = SANDBOX_DETECTIONS.AIRCRAFT_FUSELAGE_Y;
+    const wing = new Mesh(
+      new BoxGeometry(
+        SANDBOX_DETECTIONS.AIRCRAFT_WING_W,
+        SANDBOX_DETECTIONS.AIRCRAFT_WING_H,
+        SANDBOX_DETECTIONS.AIRCRAFT_WING_D
+      ),
+      body
+    );
+    wing.position.y = SANDBOX_DETECTIONS.AIRCRAFT_WING_Y;
+    const fin = new Mesh(
+      new BoxGeometry(
+        SANDBOX_DETECTIONS.AIRCRAFT_FIN_W,
+        SANDBOX_DETECTIONS.AIRCRAFT_FIN_H,
+        SANDBOX_DETECTIONS.AIRCRAFT_FIN_D
+      ),
+      dark
+    );
+    fin.position.set(0, SANDBOX_DETECTIONS.AIRCRAFT_FIN_Y, SANDBOX_DETECTIONS.AIRCRAFT_FIN_Z);
     g.add(fuselage, wing, fin);
   }
   return g;
@@ -151,17 +218,20 @@ function buildModel(cls: DetectionClass): Group {
 function makeTag(text: string): Sprite {
   const canvas = document.createElement('canvas');
   const measure = canvas.getContext('2d')!;
-  measure.font = '600 30px monospace';
-  canvas.width = Math.min(Math.ceil(measure.measureText(text).width) + 24, 512);
-  canvas.height = 44;
+  measure.font = `600 ${SANDBOX_DETECTIONS.TAG_FONT_SIZE}px monospace`;
+  canvas.width = Math.min(
+    Math.ceil(measure.measureText(text).width) + SANDBOX_DETECTIONS.TAG_PADDING_X,
+    SANDBOX_DETECTIONS.TAG_MAX_WIDTH
+  );
+  canvas.height = SANDBOX_DETECTIONS.TAG_HEIGHT;
 
   const ctx = canvas.getContext('2d')!;
-  ctx.font = '600 30px monospace';
+  ctx.font = `600 ${SANDBOX_DETECTIONS.TAG_FONT_SIZE}px monospace`;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(140, 20, 20, 0.92)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, 12, 24);
+  ctx.fillText(text, SANDBOX_DETECTIONS.TAG_PADDING_X / 2, SANDBOX_DETECTIONS.TAG_BASELINE_Y);
 
   const sprite = new Sprite(
     new SpriteMaterial({
@@ -171,8 +241,8 @@ function makeTag(text: string): Sprite {
       transparent: true,
     })
   );
-  sprite.position.set(0, 6, 0);
-  const h = 0.022;
+  sprite.position.set(0, SANDBOX_DETECTIONS.TAG_Y, 0);
+  const h = SANDBOX_DETECTIONS.TAG_SCALE_HEIGHT;
   sprite.scale.set(h * (canvas.width / canvas.height), h, 1);
   sprite.renderOrder = 960;
   return sprite;
