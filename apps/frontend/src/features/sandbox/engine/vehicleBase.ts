@@ -1,5 +1,7 @@
 import { Group, Object3D, Raycaster, Vector3 } from 'three'
 
+import { SANDBOX_MISC } from '@/constants'
+
 export type VehicleType = 'tank' | 'car' | 'jet' | 'spider'
 
 export const DOWN = new Vector3(0, -1, 0)
@@ -69,7 +71,7 @@ export abstract class Vehicle {
     if (hits.length === 0) return null
     if (vehicleFloorY === undefined) return hits[0].point.y
     // Skip hits that are clearly above the vehicle floor (bridges, overpasses)
-    const ceiling = vehicleFloorY + 3 // 3 m tolerance lets gentle slopes through
+    const ceiling = vehicleFloorY + SANDBOX_MISC.VEHICLE_BASE_CEILING_TOLERANCE_M // tolerance lets gentle slopes through
     const hit = hits.find(h => h.point.y <= ceiling)
     return hit ? hit.point.y : null
   }

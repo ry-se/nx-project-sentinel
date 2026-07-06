@@ -10,7 +10,7 @@ import { DETECTION_CLASSES, type DetectionClass } from './engine/detections';
 import { detect, DetectClientError } from './intel/detectClient';
 import { drawOBB } from './intel/renderDetectionBox';
 
-import { CANVAS } from '@/constants';
+import { CANVAS, SANDBOX_COMMON } from '@/constants';
 
 type AutoDetectState =
   | { status: 'idle' }
@@ -437,7 +437,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
                   <span className="flex-1 text-sm">{a.cls}</span>
                   {a.confidence !== undefined && (
                     <span className="text-xs text-base-content/50">
-                      {(a.confidence * 100).toFixed(0)}%
+                      {(a.confidence * SANDBOX_COMMON.PERCENT_MULTIPLIER).toFixed(0)}%
                     </span>
                   )}
                 </label>

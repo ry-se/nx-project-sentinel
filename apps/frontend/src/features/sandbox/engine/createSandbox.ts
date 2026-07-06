@@ -49,6 +49,8 @@ import { GeoFrame } from './geoFrame';
 import { ModelLibrary } from './modelCatalog';
 import { type DetectionClass, DetectionLayer, type SentinelDetection } from './detections';
 
+import { SANDBOX_COMMON, SANDBOX_ENGINE } from '@/constants';
+
 export interface SandboxAnchor {
   lat: number;
   lon: number;
@@ -211,7 +213,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.href = url;
   a.download = filename;
   a.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+  window.setTimeout(() => URL.revokeObjectURL(url), SANDBOX_ENGINE.BLOB_URL_REVOKE_MS);
 }
 
 /** Wrap an angle delta into [-π, π] so the camera eases the short way round. */
@@ -236,7 +238,7 @@ function isTyping(e: KeyboardEvent): boolean {
  * pixel coordinate could send an unbounded ray into unrelated terrain far from the capture
  * point (confirmed root cause of a `lat: 16.83` wild-outlier placement — see
  * workspaces/sentinel/journal/0012). */
-export const DEPLOY_RAYCAST_MAX_DISTANCE = 1500;
+export const DEPLOY_RAYCAST_MAX_DISTANCE = SANDBOX_ENGINE.DEPLOY_RAYCAST_MAX_DISTANCE;
 
 /** Casts a single NDC-space ray at `target`, bounded to `DEPLOY_RAYCAST_MAX_DISTANCE`, and
  * returns the first hit point or null. Extracted from deployFromImage so the distance
@@ -256,7 +258,7 @@ export function raycastBoundedHit(
 /** Assumed pixel-localization error (image px) for a detection's box-center point — a
  * documented approximation (no eval harness yet to measure a real error rate; see todo
  * W6), not a measured detector accuracy figure. */
-export const ASSUMED_PIXEL_ERROR_PX = 3;
+export const ASSUMED_PIXEL_ERROR_PX = SANDBOX_ENGINE.ASSUMED_PIXEL_ERROR_PX;
 
 /** Rough CEP-style ground-placement uncertainty in metres: pixel error converted to
  * ground distance via the ground-sample-distance at `range` (vertical FOV convention,
@@ -272,13 +274,17 @@ export function estimateGeoUncertaintyM(
   imageHeightPx: number,
   rayDirY: number
 ): number {
-  const fovRad = (fovDeg * Math.PI) / 180;
+  const fovRad = (fovDeg * Math.PI) / SANDBOX_COMMON.DEGREES_HALF_TURN;
   // Floored so a malformed/zero image height can't produce Infinity/NaN in a rendered
   // "±Xm" label — every real caller passes a loaded image's natural height, always > 0,
   // but the estimate stays finite regardless.
   const metersPerPixel = (2 * range * Math.tan(fovRad / 2)) / Math.max(imageHeightPx, 1);
-  const obliquity = 1 / Math.max(Math.abs(rayDirY), 0.15);
-  return Math.round(metersPerPixel * ASSUMED_PIXEL_ERROR_PX * obliquity * 10) / 10;
+  const obliquity = 1 / Math.max(Math.abs(rayDirY), SANDBOX_ENGINE.UNCERTAINTY_MIN_RAY_DIR_Y);
+  return (
+    Math.round(
+      metersPerPixel * ASSUMED_PIXEL_ERROR_PX * obliquity * SANDBOX_ENGINE.PIXEL_ERROR_ROUNDING_SCALE
+    ) / SANDBOX_ENGINE.PIXEL_ERROR_ROUNDING_SCALE
+  );
 }
 
 /** Everything `deployFromImage` needs from the running sandbox, as explicit dependencies
@@ -306,7 +312,12 @@ export function deployAnnotations(
   const { tilesGroup, geoFrame, detectionLayer } = deps;
 
   // Reconstruct the camera exactly as it was at screenshot time
-  const shotCam = new PerspectiveCamera(pose.camera.fovDeg, image.width / image.height, 1, 50000);
+  const shotCam = new PerspectiveCamera(
+    pose.camera.fovDeg,
+    image.width / image.height,
+    1,
+    SANDBOX_ENGINE.DEFAULT_CAMERA_FAR
+  );
   shotCam.position.fromArray(pose.camera.local.position);
   shotCam.quaternion.copy(new Quaternion().fromArray(pose.camera.local.quaternion));
   shotCam.updateMatrixWorld(true);
@@ -316,7 +327,10 @@ export function deployAnnotations(
   (raycaster as unknown as { firstHitOnly: boolean }).firstHitOnly = true;
 
   const castPixel = (u: number, v: number): Vector3 | null => {
-    const ndc = new Vector2((u / image.width) * 2 - 1, 1 - (v / image.height) * 2);
+    const ndc = new Vector2(
+      (u / image.width) * SANDBOX_ENGINE.NDC_EDGE - 1,
+      1 - (v / image.height) * SANDBOX_ENGINE.NDC_EDGE
+    );
     return raycastBoundedHit(raycaster, ndc, shotCam, tilesGroup);
   };
 
@@ -340,7 +354,7 @@ export function deployAnnotations(
     if (frontPt && rearPt) {
       headingVec = frontPt.clone().sub(rearPt);
       headingVec.y = 0;
-      if (headingVec.lengthSq() < 1e-6) headingVec.set(0, 0, 1);
+      if (headingVec.lengthSq() < SANDBOX_ENGINE.HEADING_EPSILON) headingVec.set(0, 0, 1);
       headingVec.normalize();
     }
 
@@ -415,18 +429,33 @@ export function createSandbox(
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new Scene();
-  scene.background = new Color(0x9fc4e0);
+  scene.background = new Color(SANDBOX_ENGINE.SCENE_BACKGROUND);
   // Fog far must sit INSIDE camera.far (50000). The old 1500/9000 whited-out
   // everything past ~9 km, masking the real render distance — pushed way out.
-  scene.fog = new Fog(0x9fc4e0, 12000, 45000);
+  scene.fog = new Fog(
+    SANDBOX_ENGINE.SCENE_BACKGROUND,
+    SANDBOX_ENGINE.FOG_NEAR,
+    SANDBOX_ENGINE.FOG_FAR
+  );
 
-  const camera = new PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-  camera.position.set(0, 60, -80);
+  const camera = new PerspectiveCamera(
+    SANDBOX_ENGINE.CAMERA_FOV_DEG,
+    window.innerWidth / window.innerHeight,
+    1,
+    SANDBOX_ENGINE.DEFAULT_CAMERA_FAR
+  );
+  camera.position.set(0, SANDBOX_ENGINE.CAMERA_START_Y, SANDBOX_ENGINE.CAMERA_START_Z);
   camera.layers.enable(1); // overlays
 
-  scene.add(new AmbientLight(0xffffff, 1.6));
-  const sun = new DirectionalLight(0xfff4e0, 2.0);
-  sun.position.set(300, 500, 200);
+  scene.add(
+    new AmbientLight(SANDBOX_ENGINE.AMBIENT_LIGHT_COLOR, SANDBOX_ENGINE.AMBIENT_LIGHT_INTENSITY)
+  );
+  const sun = new DirectionalLight(SANDBOX_ENGINE.SUN_COLOR, SANDBOX_ENGINE.SUN_INTENSITY);
+  sun.position.set(
+    SANDBOX_ENGINE.SUN_POSITION_X,
+    SANDBOX_ENGINE.SUN_POSITION_Y,
+    SANDBOX_ENGINE.SUN_POSITION_Z
+  );
   scene.add(sun);
 
   // --- Google Photorealistic 3D Tiles ---
@@ -435,7 +464,15 @@ export function createSandbox(
   const draco = new DRACOLoader();
   draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
   draco.setDecoderConfig({ type: 'wasm' }); // WASM decode (faster than JS fallback)
-  draco.setWorkerLimit(Math.max(4, Math.min((navigator.hardwareConcurrency || 8) - 1, 8)));
+  draco.setWorkerLimit(
+    Math.max(
+      SANDBOX_ENGINE.DRACO_WORKER_MIN,
+      Math.min(
+        (navigator.hardwareConcurrency || SANDBOX_ENGINE.DRACO_WORKER_DEFAULT) - 1,
+        SANDBOX_ENGINE.DRACO_WORKER_MAX
+      )
+    )
+  );
   draco.preload(); // fetch+compile the decoder now, so the first tiles don't wait on it
   tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: draco }));
   tiles.registerPlugin(
@@ -456,14 +493,14 @@ export function createSandbox(
   const loadRegion = new LoadRegionPlugin();
   tiles.registerPlugin(loadRegion);
   const playerRegion = new SphereRegion({
-    sphere: new Sphere(new Vector3(), 1200), // 1.2 km radius around the player
-    errorTarget: 10, // detail inside the bubble (lower = sharper)
+    sphere: new Sphere(new Vector3(), SANDBOX_ENGINE.PLAYER_LOAD_RADIUS_M), // 1.2 km radius around the player
+    errorTarget: SANDBOX_ENGINE.PLAYER_REGION_ERROR_TARGET, // detail inside the bubble (lower = sharper)
   });
   loadRegion.addRegion(playerRegion);
 
   tiles.setCamera(camera);
   tiles.setResolutionFromRenderer(camera, renderer);
-  tiles.errorTarget = 8;
+  tiles.errorTarget = SANDBOX_ENGINE.TILE_ERROR_TARGET;
 
   // Cache + concurrency MUST be sized up BEFORE the first update(). The default
   // budget (8000 tiles / 0.4 GB) is the real ceiling on render distance + fidelity:
@@ -472,12 +509,14 @@ export function createSandbox(
   // the off-screen ring resident (turn back = no reload). DEMAND (errorTarget,
   // region) must never outrun SUPPLY (these) — that combo is what caused the
   // earlier all-low-poly map (errorTarget 5 + downloadQueue 12). Keep jobs ≥ 25.
-  tiles.lruCache.minSize = 12000;
-  tiles.lruCache.maxSize = 20000;
-  tiles.lruCache.minBytesSize = 1.5 * 2 ** 30; // ~1.5 GB retained
-  tiles.lruCache.maxBytesSize = 2.5 * 2 ** 30; // ~2.5 GB ceiling (sized to VRAM)
-  tiles.downloadQueue.maxJobs = 40; // fill a big area fast (default 25)
-  tiles.parseQueue.maxJobs = 8; // keep decode from bottlenecking (default 5)
+  tiles.lruCache.minSize = SANDBOX_ENGINE.TILE_CACHE_MIN_SIZE;
+  tiles.lruCache.maxSize = SANDBOX_ENGINE.TILE_CACHE_MAX_SIZE;
+  tiles.lruCache.minBytesSize =
+    SANDBOX_ENGINE.TILE_CACHE_MIN_GB * SANDBOX_ENGINE.TILE_CACHE_BYTES_PER_GB; // ~1.5 GB retained
+  tiles.lruCache.maxBytesSize =
+    SANDBOX_ENGINE.TILE_CACHE_MAX_GB * SANDBOX_ENGINE.TILE_CACHE_BYTES_PER_GB; // ~2.5 GB ceiling (sized to VRAM)
+  tiles.downloadQueue.maxJobs = SANDBOX_ENGINE.TILE_DOWNLOAD_MAX_JOBS; // fill a big area fast (default 25)
+  tiles.parseQueue.maxJobs = SANDBOX_ENGINE.TILE_PARSE_MAX_JOBS; // keep decode from bottlenecking (default 5)
   tiles.displayActiveTiles = true; // keep region-loaded tiles drawn off-frustum
 
   scene.add(tiles.group);
@@ -504,7 +543,7 @@ export function createSandbox(
   const projectiles = new ProjectileManager(scene, tiles.group);
   const vehicles = new VehicleManager(scene, projectiles, modelLibrary);
   const bombs = new BombManager(scene);
-  vehicles.position.set(0, 30, 0);
+  vehicles.position.set(0, SANDBOX_ENGINE.VEHICLE_SPAWN_HEIGHT, 0);
 
   // --- Modes + strategist tools ---
   let mode: SandboxMode = 'player';
@@ -546,7 +585,7 @@ export function createSandbox(
   let smoothCamPitch = orbitPitch;
   // Rate at which the orbit eases back behind the character while moving, so
   // after you flick the camera with the arrows it auto-recenters (SM2 feel).
-  const RECENTER_RATE = 1.6;
+  const RECENTER_RATE = SANDBOX_ENGINE.RECENTER_RATE;
 
   const onPointerDown = (): void => {
     if (mode === 'player') dragging = true;
@@ -556,12 +595,20 @@ export function createSandbox(
   };
   const onPointerMove = (e: PointerEvent): void => {
     if (mode !== 'player' || !dragging) return;
-    orbitYaw -= e.movementX * 0.005;
-    orbitPitch = MathUtils.clamp(orbitPitch + e.movementY * 0.004, 0.08, 1.35);
+    orbitYaw -= e.movementX * SANDBOX_ENGINE.POINTER_YAW_SCALE;
+    orbitPitch = MathUtils.clamp(
+      orbitPitch + e.movementY * SANDBOX_ENGINE.POINTER_PITCH_SCALE,
+      SANDBOX_ENGINE.ORBIT_PITCH_MIN,
+      SANDBOX_ENGINE.ORBIT_PITCH_MAX
+    );
   };
   const onWheel = (e: WheelEvent): void => {
     if (mode !== 'player') return;
-    orbitDist = MathUtils.clamp(orbitDist + e.deltaY * 0.05, 12, 400);
+    orbitDist = MathUtils.clamp(
+      orbitDist + e.deltaY * SANDBOX_ENGINE.WHEEL_ZOOM_SCALE,
+      SANDBOX_ENGINE.ORBIT_DIST_MIN,
+      SANDBOX_ENGINE.ORBIT_DIST_MAX
+    );
   };
   const onKeyDown = (e: KeyboardEvent): void => {
     if (isTyping(e)) return; // don't hijack keys while user types in a form
@@ -622,16 +669,25 @@ export function createSandbox(
     let arrowYaw = false;
     if (spider) {
       if (vehicles.held('arrowleft')) {
-        orbitYaw += 2.0 * dt;
+        orbitYaw += SANDBOX_ENGINE.SPIDER_ARROW_YAW_RATE * dt;
         arrowYaw = true;
       }
       if (vehicles.held('arrowright')) {
-        orbitYaw -= 2.0 * dt;
+        orbitYaw -= SANDBOX_ENGINE.SPIDER_ARROW_YAW_RATE * dt;
         arrowYaw = true;
       }
-      if (vehicles.held('arrowup')) orbitPitch = MathUtils.clamp(orbitPitch + 1.4 * dt, 0.08, 1.35);
+      if (vehicles.held('arrowup'))
+        orbitPitch = MathUtils.clamp(
+          orbitPitch + SANDBOX_ENGINE.SPIDER_ARROW_PITCH_RATE * dt,
+          SANDBOX_ENGINE.ORBIT_PITCH_MIN,
+          SANDBOX_ENGINE.ORBIT_PITCH_MAX
+        );
       if (vehicles.held('arrowdown'))
-        orbitPitch = MathUtils.clamp(orbitPitch - 1.4 * dt, 0.08, 1.35);
+        orbitPitch = MathUtils.clamp(
+          orbitPitch - SANDBOX_ENGINE.SPIDER_ARROW_PITCH_RATE * dt,
+          SANDBOX_ENGINE.ORBIT_PITCH_MIN,
+          SANDBOX_ENGINE.ORBIT_PITCH_MAX
+        );
     }
 
     // Decide where the camera WANTS to be this frame.
@@ -644,13 +700,13 @@ export function createSandbox(
       // face (low pitch), pulled back a little so the building fills the frame
       // and the camera rises with the climb. Insomniac's wall cam.
       targetYaw = Math.atan2(wallN[0], wallN[2]);
-      targetPitch = 0.14;
-      dist = orbitDist + 6;
+      targetPitch = SANDBOX_ENGINE.SPIDER_WALL_CAM_PITCH;
+      dist = orbitDist + SANDBOX_ENGINE.SPIDER_WALL_CAM_DIST_ADD;
     } else {
       // Ease the orbit back behind the character while you're actually moving
       // (and not hand-orbiting) so pushing a direction settles the camera
       // behind you — no manual re-aligning.
-      if (spider && !arrowYaw && st.speed > 2) {
+      if (spider && !arrowYaw && st.speed > SANDBOX_ENGINE.SPIDER_RECENTER_SPEED_MIN) {
         orbitYaw += wrapAngle(Math.PI - orbitYaw) * Math.min(1, dt * RECENTER_RATE);
       }
       targetYaw = st.heading + orbitYaw;
@@ -660,8 +716,14 @@ export function createSandbox(
     let pitch: number;
     if (spider) {
       // Filter the target (kills heading jitter; lets the wall cam swing in).
-      smoothCamYaw += wrapAngle(targetYaw - smoothCamYaw) * Math.min(1, dt * (wallN ? 4 : 9));
-      smoothCamPitch += (targetPitch - smoothCamPitch) * Math.min(1, dt * 6);
+      smoothCamYaw +=
+        wrapAngle(targetYaw - smoothCamYaw) *
+        Math.min(
+          1,
+          dt * (wallN ? SANDBOX_ENGINE.SPIDER_SMOOTH_WALL_RATE : SANDBOX_ENGINE.SPIDER_SMOOTH_RATE)
+        );
+      smoothCamPitch +=
+        (targetPitch - smoothCamPitch) * Math.min(1, dt * SANDBOX_ENGINE.SPIDER_PITCH_SMOOTH_RATE);
       yaw = smoothCamYaw;
       pitch = smoothCamPitch;
     } else {
@@ -681,32 +743,33 @@ export function createSandbox(
 
     // Spider-Man: widen FOV + tighten follow + lead the camera at speed
     const boost = st.fovBoost ?? 0;
-    const targetFov = 60 + 18 * boost;
-    if (Math.abs(camera.fov - targetFov) > 0.1) {
-      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
+    const targetFov = SANDBOX_ENGINE.CAMERA_FOV_DEG + SANDBOX_ENGINE.FOV_BOOST_DEG * boost;
+    if (Math.abs(camera.fov - targetFov) > SANDBOX_ENGINE.FOV_UPDATE_EPSILON) {
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * SANDBOX_ENGINE.FOV_SMOOTH_RATE);
       camera.updateProjectionMatrix();
     }
-    const follow = boost > 0 ? 8 : 5;
+    const follow = boost > 0 ? SANDBOX_ENGINE.FOLLOW_BOOST_RATE : SANDBOX_ENGINE.FOLLOW_BASE_RATE;
     camera.position.lerp(desired, Math.min(1, dt * follow));
 
     // look slightly ahead of motion when fast (40% lead at top speed)
-    const lead = boost * 0.25;
+    const lead = boost * SANDBOX_ENGINE.CAMERA_LEAD_SCALE;
     const ahead = new Vector3(
       t.x + Math.sin(st.heading) * st.speed * lead,
-      t.y + 4,
+      t.y + SANDBOX_ENGINE.CAMERA_TARGET_HEIGHT,
       t.z + Math.cos(st.heading) * st.speed * lead
     );
-    camTarget.lerp(ahead, Math.min(1, dt * 8));
+    camTarget.lerp(ahead, Math.min(1, dt * SANDBOX_ENGINE.CAMERA_TARGET_LERP_RATE));
     camera.lookAt(camTarget);
 
     // screen shake — decays exponentially
-    if (cameraShake > 0.05) {
-      const s = cameraShake * 0.9;
-      camera.position.x += (Math.random() - 0.5) * s;
-      camera.position.y += (Math.random() - 0.5) * s * 0.5;
-      camera.position.z += (Math.random() - 0.5) * s;
+    if (cameraShake > SANDBOX_ENGINE.SHAKE_MIN) {
+      const s = cameraShake * SANDBOX_ENGINE.SHAKE_SCALE;
+      camera.position.x += (Math.random() - SANDBOX_ENGINE.SHAKE_HALF_SCALE) * s;
+      camera.position.y +=
+        (Math.random() - SANDBOX_ENGINE.SHAKE_HALF_SCALE) * s * SANDBOX_ENGINE.SHAKE_HALF_SCALE;
+      camera.position.z += (Math.random() - SANDBOX_ENGINE.SHAKE_HALF_SCALE) * s;
     }
-    cameraShake *= Math.pow(0.04, dt); // fast decay
+    cameraShake *= Math.pow(SANDBOX_ENGINE.SHAKE_DECAY, dt); // fast decay
   }
 
   // --- Attributions (Google ToS requires display) ---
@@ -720,12 +783,12 @@ export function createSandbox(
     } catch {
       cb.onAttributions('© Google');
     }
-  }, 2000);
+  }, SANDBOX_ENGINE.ATTRIBUTION_POLL_MS);
 
   // --- Loop ---
   const clock = new Clock();
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.1);
+    const dt = Math.min(clock.getDelta(), SANDBOX_ENGINE.MAX_FRAME_DELTA_S);
 
     if (mode === 'player') {
       // Spider locomotion is camera-relative — hand it last frame's smoothed
@@ -782,14 +845,20 @@ export function createSandbox(
           lon: geo.lon,
           altM: geo.altM,
           headingDeg: geoFrame.compassHeadingDeg(forward),
-          pitchDeg: (Math.asin(MathUtils.clamp(forward.y, -1, 1)) * 180) / Math.PI,
+          pitchDeg:
+            (Math.asin(MathUtils.clamp(forward.y, -1, 1)) *
+              SANDBOX_COMMON.DEGREES_HALF_TURN) /
+            Math.PI,
         },
       },
     };
   }
 
   function captureShot(): void {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .slice(0, SANDBOX_ENGINE.CAPTURE_STAMP_LENGTH);
     const pose = getCameraPose();
     pose.image = { width: canvas.width, height: canvas.height };
 

@@ -1,6 +1,8 @@
 import { MathUtils, Matrix4, Vector3 } from 'three';
 import type { TilesRenderer } from '3d-tiles-renderer';
 
+import { SANDBOX_COMMON } from '@/constants';
+
 export interface GeoPosition {
   lat: number;
   lon: number;
@@ -61,6 +63,10 @@ export class GeoFrame {
     this.ensure();
     const e = directionLocal.dot(this.east);
     const n = directionLocal.dot(this.north);
-    return ((Math.atan2(e, n) * 180) / Math.PI + 360) % 360;
+    return (
+      ((Math.atan2(e, n) * SANDBOX_COMMON.DEGREES_HALF_TURN) / Math.PI +
+        SANDBOX_COMMON.DEGREES_FULL_CIRCLE) %
+      SANDBOX_COMMON.DEGREES_FULL_CIRCLE
+    );
   }
 }

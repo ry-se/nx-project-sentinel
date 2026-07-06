@@ -2,6 +2,8 @@ import { Box3, Color, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
+import { SANDBOX_MISC } from '@/constants';
+
 /**
  * Central model catalogue. Drop a .glb into apps/frontend/public/models/ and
  * register it here — every consumer (player vehicles, hostile detections,
@@ -83,7 +85,7 @@ function normalise(scene: Group, def: ModelDef): Group {
 
   const box = new Box3().setFromObject(model);
   const size = box.getSize(new Vector3());
-  const length = Math.max(size.z, 0.001);
+  const length = Math.max(size.z, SANDBOX_MISC.MODEL_LENGTH_EPSILON);
   model.scale.setScalar(def.targetLength / length);
   model.updateMatrixWorld(true);
 
@@ -108,7 +110,7 @@ function tint(root: Group, hex: number): void {
     const materials = wasArray ? (mesh.material as MeshStandardMaterial[]) : [mesh.material as MeshStandardMaterial];
     const tinted = materials.map((m) => {
       const cloned = m.clone();
-      if (cloned.color) cloned.color.lerp(target, 0.45);
+      if (cloned.color) cloned.color.lerp(target, SANDBOX_MISC.MODEL_TINT_BLEND);
       return cloned;
     });
     mesh.material = wasArray ? tinted : tinted[0];

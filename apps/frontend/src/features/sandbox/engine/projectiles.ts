@@ -4,9 +4,11 @@ import {
   SpriteMaterial, Vector3,
 } from 'three'
 
-const GRAVITY = -25
-const MAX_LIFE = 8
-const MAX_SCORCH = 25
+import { SANDBOX_PROJECTILES } from '@/constants'
+
+const GRAVITY = SANDBOX_PROJECTILES.GRAVITY
+const MAX_LIFE = SANDBOX_PROJECTILES.MAX_LIFE
+const MAX_SCORCH = SANDBOX_PROJECTILES.MAX_SCORCH
 
 interface Projectile {
   mesh: Mesh
@@ -33,12 +35,16 @@ export class ProjectileManager {
   private fireTexture: CanvasTexture
   private smokeTexture: CanvasTexture
   private scorchTexture: CanvasTexture
-  private shellGeo = new SphereGeometry(0.4, 8, 8)
-  private shellMat = new MeshBasicMaterial({ color: 0xffcc66 })
+  private shellGeo = new SphereGeometry(
+    SANDBOX_PROJECTILES.SHELL_RADIUS,
+    SANDBOX_PROJECTILES.SHELL_SEGMENTS,
+    SANDBOX_PROJECTILES.SHELL_SEGMENTS,
+  )
+  private shellMat = new MeshBasicMaterial({ color: SANDBOX_PROJECTILES.SHELL_COLOR })
 
   constructor(scene: Scene, terrain: Object3D) {
     this.terrain = terrain
-    this.root.traverse(o => o.layers.set(1))
+    this.root.traverse(o => o.layers.set(SANDBOX_PROJECTILES.LAYER))
     scene.add(this.root)
     ;(this.raycaster as unknown as { firstHitOnly: boolean }).firstHitOnly = true
 
@@ -50,7 +56,7 @@ export class ProjectileManager {
   public fire(origin: Vector3, direction: Vector3, speed: number): void {
     const mesh = new Mesh(this.shellGeo, this.shellMat)
     mesh.position.copy(origin)
-    mesh.layers.set(1)
+    mesh.layers.set(SANDBOX_PROJECTILES.LAYER)
     this.root.add(mesh)
     this.projectiles.push({
       mesh,
@@ -102,8 +108,8 @@ export class ProjectileManager {
       }
       const f = pt.life / pt.maxLife
       pt.sprite.position.addScaledVector(pt.velocity, dt)
-      pt.velocity.multiplyScalar(1 - 1.5 * dt)
-      pt.velocity.y += 6 * dt // smoke rises
+      pt.velocity.multiplyScalar(1 - SANDBOX_PROJECTILES.PARTICLE_DRAG * dt)
+      pt.velocity.y += SANDBOX_PROJECTILES.SMOKE_RISE * dt // smoke rises
       const mat = pt.sprite.material as SpriteMaterial
       mat.opacity = 1 - f
       pt.sprite.scale.setScalar(pt.sprite.scale.x + pt.grow * dt)
@@ -112,33 +118,64 @@ export class ProjectileManager {
 
   public explode(at: Vector3, normal: Vector3): void {
     // flash
-    this.spawnParticle(at, new Vector3(), 0.35, 26, this.fireTexture, true, 70)
+    this.spawnParticle(
+      at,
+      new Vector3(),
+      SANDBOX_PROJECTILES.FLASH_LIFE,
+      SANDBOX_PROJECTILES.FLASH_SIZE,
+      this.fireTexture,
+      true,
+      SANDBOX_PROJECTILES.FLASH_GROW,
+    )
     // fireball
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < SANDBOX_PROJECTILES.FIREBALL_COUNT; i++) {
       this.spawnParticle(
-        at, randomDir().multiplyScalar(8 + Math.random() * 14),
-        0.5 + Math.random() * 0.5, 5 + Math.random() * 6, this.fireTexture, true, 8,
+        at,
+        randomDir().multiplyScalar(
+          SANDBOX_PROJECTILES.FIREBALL_SPEED_BASE +
+            Math.random() * SANDBOX_PROJECTILES.FIREBALL_SPEED_RANDOM,
+        ),
+        SANDBOX_PROJECTILES.FIREBALL_LIFE_BASE +
+          Math.random() * SANDBOX_PROJECTILES.FIREBALL_LIFE_RANDOM,
+        SANDBOX_PROJECTILES.FIREBALL_SIZE_BASE +
+          Math.random() * SANDBOX_PROJECTILES.FIREBALL_SIZE_RANDOM,
+        this.fireTexture,
+        true,
+        SANDBOX_PROJECTILES.FIREBALL_GROW,
       )
     }
     // smoke
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < SANDBOX_PROJECTILES.SMOKE_COUNT; i++) {
       this.spawnParticle(
-        at.clone().addScaledVector(normal, 1.5),
-        randomDir().multiplyScalar(4 + Math.random() * 7),
-        1.6 + Math.random() * 1.6, 7 + Math.random() * 8, this.smokeTexture, false, 10,
+        at.clone().addScaledVector(normal, SANDBOX_PROJECTILES.SMOKE_NORMAL_OFFSET),
+        randomDir().multiplyScalar(
+          SANDBOX_PROJECTILES.SMOKE_SPEED_BASE +
+            Math.random() * SANDBOX_PROJECTILES.SMOKE_SPEED_RANDOM,
+        ),
+        SANDBOX_PROJECTILES.SMOKE_LIFE_BASE +
+          Math.random() * SANDBOX_PROJECTILES.SMOKE_LIFE_RANDOM,
+        SANDBOX_PROJECTILES.SMOKE_SIZE_BASE +
+          Math.random() * SANDBOX_PROJECTILES.SMOKE_SIZE_RANDOM,
+        this.smokeTexture,
+        false,
+        SANDBOX_PROJECTILES.SMOKE_GROW,
       )
     }
     // persistent scorch decal on the surface
     const scorch = new Mesh(
-      new CircleGeometry(5 + Math.random() * 3, 24),
+      new CircleGeometry(
+        SANDBOX_PROJECTILES.SCORCH_RADIUS_BASE +
+          Math.random() * SANDBOX_PROJECTILES.SCORCH_RADIUS_RANDOM,
+        SANDBOX_PROJECTILES.SCORCH_SEGMENTS,
+      ),
       new MeshBasicMaterial({
         map: this.scorchTexture, transparent: true, depthWrite: false,
-        polygonOffset: true, polygonOffsetFactor: -2,
+        polygonOffset: true, polygonOffsetFactor: SANDBOX_PROJECTILES.SCORCH_POLYGON_OFFSET_FACTOR,
       }),
     )
-    scorch.position.copy(at).addScaledVector(normal, 0.25)
+    scorch.position.copy(at).addScaledVector(normal, SANDBOX_PROJECTILES.SCORCH_NORMAL_OFFSET)
     scorch.lookAt(at.clone().add(normal))
-    scorch.layers.set(1)
+    scorch.layers.set(SANDBOX_PROJECTILES.LAYER)
     this.root.add(scorch)
     this.scorches.push(scorch)
     if (this.scorches.length > MAX_SCORCH) {
@@ -159,26 +196,37 @@ export class ProjectileManager {
     }))
     sprite.position.copy(at)
     sprite.scale.setScalar(size)
-    sprite.layers.set(1)
-    sprite.renderOrder = 900
+    sprite.layers.set(SANDBOX_PROJECTILES.LAYER)
+    sprite.renderOrder = SANDBOX_PROJECTILES.PARTICLE_RENDER_ORDER
     this.root.add(sprite)
     this.particles.push({ sprite, velocity, life: 0, maxLife, grow })
   }
 }
 
 function randomDir(): Vector3 {
-  return new Vector3(Math.random() - 0.5, Math.random() * 0.7, Math.random() - 0.5).normalize()
+  return new Vector3(
+    Math.random() - SANDBOX_PROJECTILES.RANDOM_DIR_CENTER,
+    Math.random() * SANDBOX_PROJECTILES.RANDOM_DIR_Y_SCALE,
+    Math.random() - SANDBOX_PROJECTILES.RANDOM_DIR_CENTER,
+  ).normalize()
 }
 
 function radialTexture(inner: string, outer: string): CanvasTexture {
   const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
+  canvas.width = SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE
+  canvas.height = SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE
   const ctx = canvas.getContext('2d')!
-  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 64)
+  const grad = ctx.createRadialGradient(
+    SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,
+    SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,
+    SANDBOX_PROJECTILES.DECAL_SIZE,
+    SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,
+    SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,
+    SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,
+  )
   grad.addColorStop(0, inner)
   grad.addColorStop(1, outer)
   ctx.fillStyle = grad
-  ctx.fillRect(0, 0, 128, 128)
+  ctx.fillRect(0, 0, SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE, SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE)
   return new CanvasTexture(canvas)
 }

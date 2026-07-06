@@ -73,6 +73,8 @@ import { IntelImport } from './IntelImport';
 import { PanelRail } from './ui/PanelRail';
 import { PanelSection } from './ui/PanelSection';
 
+import { SANDBOX_COMMON, SANDBOX_WORLD_VIEW } from '@/constants';
+
 const KEY_STORAGE = 'google_tiles_key';
 
 // SPAWN_LOCATIONS imported from shared module
@@ -498,7 +500,7 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
         setArmedFeatureId(null);
         setFeatureVersion((v) => v + 1);
       }
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [armedFeatureId]);
 
@@ -513,7 +515,7 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setBriefState(sb.getBriefPlaybackState());
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
@@ -528,7 +530,7 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setTimelineState(sb.getTimelineState());
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
@@ -541,7 +543,7 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setRehearsing(sb.isRehearsing());
-    }, 200);
+    }, SANDBOX_WORLD_VIEW.STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
@@ -579,11 +581,11 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     const elevations = elevationProfile.map((s) => s.elevationM);
     const minE = Math.min(...elevations);
     const maxE = Math.max(...elevations);
-    const range = Math.max(maxE - minE, 1e-3);
+    const range = Math.max(maxE - minE, SANDBOX_WORLD_VIEW.ELEVATION_EPSILON);
     const maxDist = elevationProfile[elevationProfile.length - 1].distanceAlongM;
 
     const toXY = (s: ElevationSample): [number, number] => [
-      (s.distanceAlongM / Math.max(maxDist, 1e-3)) * width,
+      (s.distanceAlongM / Math.max(maxDist, SANDBOX_WORLD_VIEW.ELEVATION_EPSILON)) * width,
       height - ((s.elevationM - minE) / range) * height,
     ];
 
@@ -632,7 +634,7 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     const timer = window.setInterval(() => {
       const sb = sandboxRef.current;
       if (sb) setPose(sb.getCameraPose());
-    }, 500);
+    }, SANDBOX_WORLD_VIEW.CAMERA_POSE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal]);
 
@@ -641,7 +643,7 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     if (!sb) return;
     void navigator.clipboard.writeText(JSON.stringify(sb.getCameraPose(), null, 2));
     setPoseCopied(true);
-    window.setTimeout(() => setPoseCopied(false), 1500);
+    window.setTimeout(() => setPoseCopied(false), SANDBOX_WORLD_VIEW.POSE_COPY_RESET_MS);
   };
 
   const submitKey = (): void => {
@@ -1297,7 +1299,11 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
                   </div>
                   {exposureResult && (
                     <div className="px-2 pb-1 text-xs">
-                      <strong>{(exposureResult.fraction * 100).toFixed(0)}%</strong> of route
+                      <strong>
+                        {(exposureResult.fraction * SANDBOX_COMMON.PERCENT_MULTIPLIER).toFixed(0)}
+                        %
+                      </strong>{' '}
+                      of route
                       exposed{' '}
                       <span className="text-[9px] text-base-content/40">
                         (computed from {features.find((f) => f.id === exposureThreatId)?.name}'s
@@ -1372,7 +1378,8 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
               Camera pose
             </div>
             <div>
-              lat {pose.camera.geo.lat.toFixed(6)} lon {pose.camera.geo.lon.toFixed(6)}
+              lat {pose.camera.geo.lat.toFixed(SANDBOX_WORLD_VIEW.CAMERA_POSE_DECIMALS)} lon{' '}
+              {pose.camera.geo.lon.toFixed(SANDBOX_WORLD_VIEW.CAMERA_POSE_DECIMALS)}
             </div>
             <div>
               alt {pose.camera.geo.altM.toFixed(0)} m · hdg {pose.camera.geo.headingDeg.toFixed(1)}°

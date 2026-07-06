@@ -9,6 +9,8 @@ import {
   toLocalPoint,
 } from './planFeature';
 
+import { SANDBOX_COMMON, SANDBOX_MISC } from '@/constants';
+
 /** Sample spacing along a path (metres) — a named constant, not a magic literal at the
  * call site (Wave-4 invariant, same convention as `briefPlayback.ts`'s
  * `BRIEF_TRANSITION_DURATION_MS`). */
@@ -63,7 +65,8 @@ export function sampleElevationProfile(
     const slopePercent =
       lastElevation === null
         ? 0
-        : ((elevation - lastElevation) / Math.max(d - lastDistance, 1e-6)) * 100;
+        : ((elevation - lastElevation) / Math.max(d - lastDistance, SANDBOX_MISC.ELEVATION_LENGTH_EPSILON)) *
+          SANDBOX_COMMON.PERCENT_MULTIPLIER;
     samples.push({ distanceAlongM: d, elevationM: elevation, slopePercent });
     lastElevation = elevation;
     lastDistance = d;
@@ -78,12 +81,12 @@ function pointAtDistance(
   distanceM: number,
   totalLength: number
 ): Vector3 | null {
-  if (distanceM > totalLength + 1e-6) return null;
+  if (distanceM > totalLength + SANDBOX_MISC.ELEVATION_LENGTH_EPSILON) return null;
   let remaining = Math.min(distanceM, totalLength);
   for (let i = 1; i < points.length; i++) {
     const segLength = points[i].distanceTo(points[i - 1]);
     if (remaining <= segLength || i === points.length - 1) {
-      const t = segLength < 1e-9 ? 0 : Math.min(remaining / segLength, 1);
+      const t = segLength < SANDBOX_COMMON.TINY_EPSILON ? 0 : Math.min(remaining / segLength, 1);
       return points[i - 1].clone().lerp(points[i], t);
     }
     remaining -= segLength;
@@ -105,8 +108,8 @@ export const MOVE_RATES_KMH: Record<MoveRate, number> = {
 
 export function estimateMoveTimeMinutes(pathLengthM: number, rate: MoveRate): number {
   const rateKmh = MOVE_RATES_KMH[rate];
-  const lengthKm = pathLengthM / 1000;
-  return (lengthKm / rateKmh) * 60;
+  const lengthKm = pathLengthM / SANDBOX_COMMON.METERS_PER_KILOMETER;
+  return (lengthKm / rateKmh) * SANDBOX_COMMON.SECONDS_PER_MINUTE;
 }
 
 // ---------- route exposure (todo 31 / M2) ----------
@@ -178,7 +181,7 @@ export function buildRouteExposureGroup(samples: ExposureSample[]): Group {
     const a = new Vector3(prev.x, prev.y, prev.z);
     const b = new Vector3(curr.x, curr.y, curr.z);
     const color = samples[i].visibleToThreat ? EXPOSED_COLOR : COVERED_COLOR;
-    const band = buildBandSegment(a, b, 3, color);
+    const band = buildBandSegment(a, b, SANDBOX_MISC.ROUTE_EXPOSURE_BAND_WIDTH, color);
     if (band) g.add(band);
   }
   return g;
