@@ -106,9 +106,13 @@ vi.mock('./engine/createSandbox', async () => {
 });
 
 async function mountInStrategistMode(): Promise<void> {
-  localStorage.setItem('google_tiles_key', 'test-key');
+  vi.stubEnv('VITE_GOOGLE_TILES_KEY', 'test-key');
   render(<WorldView />);
-  await waitFor(() => expect(screen.getByText(/STRATEGIST/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('tab', { name: /Tools/ })).toBeInTheDocument());
+}
+
+function selectPanelTab(name: RegExp): void {
+  fireEvent.click(screen.getByRole('tab', { name }));
 }
 
 describe('WorldView — feature list panel (todo 12)', () => {
@@ -124,6 +128,8 @@ describe('WorldView — feature list panel (todo 12)', () => {
 
   it('lists every drawn feature by name and type', async () => {
     await mountInStrategistMode();
+    selectPanelTab(/Features/);
+
     expect(screen.getByText('Features (2)')).toBeInTheDocument();
     expect(screen.getByText(/Distance 1/)).toBeInTheDocument();
     expect(screen.getByText(/Fire Arc 1/)).toBeInTheDocument();
@@ -131,6 +137,8 @@ describe('WorldView — feature list panel (todo 12)', () => {
 
   it('selecting a row calls selectFeature and toggles off on a second click', async () => {
     await mountInStrategistMode();
+    selectPanelTab(/Features/);
+
     fireEvent.click(screen.getByTitle('Distance 1'));
     expect(selectFeature).toHaveBeenLastCalledWith('f1');
     fireEvent.click(screen.getByTitle('Distance 1'));
@@ -139,6 +147,8 @@ describe('WorldView — feature list panel (todo 12)', () => {
 
   it('renaming a feature updates the panel row', async () => {
     await mountInStrategistMode();
+    selectPanelTab(/Features/);
+
     fireEvent.click(screen.getByLabelText('Rename Distance 1'));
     const input = screen.getByLabelText('Rename Distance 1') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'PL COBRA' } });
@@ -150,6 +160,8 @@ describe('WorldView — feature list panel (todo 12)', () => {
 
   it('deleting a feature removes it from the panel and drops the count', async () => {
     await mountInStrategistMode();
+    selectPanelTab(/Features/);
+
     fireEvent.click(screen.getByLabelText('Delete Fire Arc 1'));
 
     await waitFor(() => expect(screen.getByText('Features (1)')).toBeInTheDocument());
@@ -159,6 +171,8 @@ describe('WorldView — feature list panel (todo 12)', () => {
 
   it('undo removes the last feature and disables once the list is empty', async () => {
     await mountInStrategistMode();
+    selectPanelTab(/Features/);
+
     const undo = screen.getByLabelText('Undo last placed feature');
     expect(undo).not.toBeDisabled();
 

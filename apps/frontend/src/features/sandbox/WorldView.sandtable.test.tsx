@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TilesRenderer } from '3d-tiles-renderer';
+import { useState } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene } from 'three';
 
+import { NavBar } from '../../layouts/NavBar';
 import { BRIEF_TRANSITION_DURATION_MS } from './engine/briefPlayback';
 import type { CameraPose, Sandbox, SandboxCallbacks } from './engine/createSandbox';
 import { exportGeoJSON, exportKML } from './engine/exportPlan';
@@ -25,9 +28,9 @@ import { WorldView } from './WorldView';
  *    unmodified (invariant 3 — no regression from the Wave-2 additions).
  *
  * 2. "export buttons — UI wiring": the lightweight React-level check (same `fakeSandbox`
- *    convention as `WorldView.featureList.test.tsx`) that the Plans panel's Export
- *    GeoJSON/KML buttons are disabled with no features, enabled once features exist, and
- *    call the right `Sandbox` methods with the current plan-name draft.
+ *    convention as `WorldView.featureList.test.tsx`) that the navbar Export actions are
+ *    disabled with no features, enabled once features exist, and call the right `Sandbox`
+ *    methods with the current plan-name draft.
  */
 
 // ---- module-scope fixtures for the "export buttons — UI wiring" describe block below.
@@ -52,7 +55,6 @@ const fakeSandbox: Partial<Sandbox> = {
   setUnitEchelon: vi.fn(),
   setRangeFanSystem: vi.fn(),
   getRangeFanSystemId: vi.fn(() => null),
-  setMgrsHudEnabled: vi.fn(),
   savePlan: vi.fn(),
   loadPlan: vi.fn(),
   listPlans: vi.fn(() => []),
@@ -144,9 +146,37 @@ vi.mock('./engine/createSandbox', async () => {
 });
 
 async function mountInStrategistMode(): Promise<void> {
-  localStorage.setItem('google_tiles_key', 'test-key');
+  vi.stubEnv('VITE_GOOGLE_TILES_KEY', 'test-key');
   render(<WorldView />);
-  await waitFor(() => expect(screen.getByText(/STRATEGIST/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('tab', { name: /Tools/ })).toBeInTheDocument());
+}
+
+const noop = (): void => undefined;
+
+function WorldViewWithNav() {
+  const [sandboxPlanExport, setSandboxPlanExport] = useState({
+    visible: false,
+    disabled: true,
+    onExportGeoJSON: noop,
+    onExportKML: noop,
+  });
+
+  return (
+    <MemoryRouter>
+      <NavBar sandboxPlanExport={sandboxPlanExport} />
+      <WorldView onPlanExportChange={setSandboxPlanExport} />
+    </MemoryRouter>
+  );
+}
+
+async function mountInStrategistModeWithNav(): Promise<void> {
+  vi.stubEnv('VITE_GOOGLE_TILES_KEY', 'test-key');
+  render(<WorldViewWithNav />);
+  await waitFor(() => expect(screen.getByRole('tab', { name: /Tools/ })).toBeInTheDocument());
+}
+
+function selectPanelTab(name: RegExp): void {
+  fireEvent.click(screen.getByRole('tab', { name }));
 }
 
 function fakeCanvasContext() {
@@ -394,17 +424,22 @@ describe('export buttons — UI wiring (todo 24)', () => {
   });
 
   it('export buttons are disabled with no features placed yet', async () => {
-    await mountInStrategistMode();
+    await mountInStrategistModeWithNav();
+
+    expect(screen.getByRole('button', { name: /^Export$/ })).toBeDisabled();
     expect(screen.getByLabelText('Export plan as GeoJSON')).toBeDisabled();
     expect(screen.getByLabelText('Export plan as KML')).toBeDisabled();
   });
 
   it('export buttons enable once a feature exists, and call the right Sandbox method', async () => {
     uiWiringFeatures = [{ id: 'f1', name: 'Distance 1', type: 'distance' }];
-    await mountInStrategistMode();
+    await mountInStrategistModeWithNav();
 
     const geoBtn = screen.getByLabelText('Export plan as GeoJSON');
     const kmlBtn = screen.getByLabelText('Export plan as KML');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Export$/ })).not.toBeDisabled()
+    );
     expect(geoBtn).not.toBeDisabled();
     expect(kmlBtn).not.toBeDisabled();
 
@@ -417,7 +452,8 @@ describe('export buttons — UI wiring (todo 24)', () => {
 
   it('uses the typed plan name for the export filename/document name', async () => {
     uiWiringFeatures = [{ id: 'f1', name: 'Distance 1', type: 'distance' }];
-    await mountInStrategistMode();
+    await mountInStrategistModeWithNav();
+    selectPanelTab(/Plans/);
 
     fireEvent.change(screen.getByLabelText('Plan name'), { target: { value: 'COY ATTACK' } });
     fireEvent.click(screen.getByLabelText('Export plan as GeoJSON'));

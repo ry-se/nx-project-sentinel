@@ -1,7 +1,9 @@
 import { BrowserRouter } from 'react-router-dom';
+import { useState } from 'react';
 import * as ReactDOM from 'react-dom/client';
 
 import { App } from './app/app';
+import type { SandboxMode } from './features/sandbox/engine/createSandbox';
 import { NavBar } from './layouts/NavBar';
 
 // Tile caching is DISABLED. The cache-first service worker served stale /
@@ -21,9 +23,36 @@ if ('caches' in window) {
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
-root.render(
-  <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-    <NavBar />
-    <App />
-  </BrowserRouter>
-);
+interface SandboxPlanExportState {
+  visible: boolean;
+  disabled: boolean;
+  onExportGeoJSON: () => void;
+  onExportKML: () => void;
+}
+
+const noop = (): void => undefined;
+
+function Root() {
+  const [sandboxModeBadge, setSandboxModeBadge] = useState<{
+    mode: SandboxMode;
+    visible: boolean;
+  }>({ mode: 'player', visible: false });
+  const [sandboxPlanExport, setSandboxPlanExport] = useState<SandboxPlanExportState>({
+    visible: false,
+    disabled: true,
+    onExportGeoJSON: noop,
+    onExportKML: noop,
+  });
+
+  return (
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <NavBar sandboxModeBadge={sandboxModeBadge} sandboxPlanExport={sandboxPlanExport} />
+      <App
+        onSandboxModeBadgeChange={setSandboxModeBadge}
+        onSandboxPlanExportChange={setSandboxPlanExport}
+      />
+    </BrowserRouter>
+  );
+}
+
+root.render(<Root />);
