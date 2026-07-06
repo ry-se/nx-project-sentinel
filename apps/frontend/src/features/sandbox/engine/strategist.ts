@@ -48,6 +48,12 @@ import {
 } from './unitSymbol';
 import type { ViewshedController } from './viewshed';
 import { BriefPlaybackStepper } from './briefPlayback';
+import {
+  type ElevationSample,
+  estimateMoveTimeMinutes,
+  type MoveRate,
+  sampleElevationProfile,
+} from './elevationProfile';
 import { GroundWalkController, type MoveDirection } from './groundWalk';
 import { resolveRehearsalStep } from './rehearsal';
 import { type PhasePositions, TimelineStepper, unitPositionAt } from './timeline';
@@ -128,6 +134,11 @@ export interface FeatureSummary {
 }
 
 const POINT_FEATURE_TYPES: PlanFeatureType[] = ['objective', 'unit'];
+
+/** Feature types with a genuine multi-point path (todo 29 — the ones M1/M4/M2 can
+ * analyze). `focus`/`arc`/`los`/linear-measures are excluded: they're areas, arcs, or a
+ * single observer-target pair, not a route a unit would traverse. */
+const PATH_FEATURE_TYPES: PlanFeatureType[] = ['distance', 'axis'];
 
 interface Feature {
   id: string;
@@ -697,6 +708,34 @@ export class StrategistController {
       currentIndex: this.timelineStepper.currentIndex,
       isPlaying: this.timelineStepper.isPlaying,
     };
+  }
+
+  // ---------- terrain-reasoning depth (Wave 4) ----------
+
+  private pathPoints(featureId: string): Vector3[] | null {
+    const f = this.features.find((f) => f.id === featureId);
+    if (!f || !PATH_FEATURE_TYPES.includes(f.planFeature.type)) return null;
+    return f.planFeature.points.local.map((p) => new Vector3(p.x, p.y, p.z));
+  }
+
+  public isPathFeature(featureId: string): boolean {
+    return this.pathPoints(featureId) !== null;
+  }
+
+  /** M1 — elevation profile + slope along a selected path (todo 29). `null` when the
+   * feature isn't a path type. */
+  public computeElevationProfile(featureId: string, spacingM?: number): ElevationSample[] | null {
+    const points = this.pathPoints(featureId);
+    if (!points) return null;
+    return sampleElevationProfile(points, this.raycaster, this.tiles, spacingM);
+  }
+
+  /** M4 — measured-move timing along a selected path (todo 29). `null` when the feature
+   * isn't a path type. */
+  public computeMoveTimeMinutes(featureId: string, rate: MoveRate): number | null {
+    const points = this.pathPoints(featureId);
+    if (!points) return null;
+    return estimateMoveTimeMinutes(pathLength(points), rate);
   }
 
   public removeFeature(id: string): void {

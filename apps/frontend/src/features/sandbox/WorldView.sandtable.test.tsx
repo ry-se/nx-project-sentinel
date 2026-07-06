@@ -98,6 +98,9 @@ const fakeSandbox: Partial<Sandbox> = {
   armSetUnitPhasePosition: vi.fn(),
   cancelSetUnitPhasePosition: vi.fn(),
   isArmedForPhasePosition: vi.fn(() => false),
+  isPathFeature: vi.fn(() => false),
+  getElevationProfile: vi.fn(() => null),
+  getMoveTimeMinutes: vi.fn(() => null),
   switchVehicle: vi.fn(),
   setLabelsVisible: vi.fn(),
   getCameraPose: vi.fn(() => ({

@@ -16,6 +16,7 @@ import {
   type LucideIcon,
   Map,
   MapPin,
+  Mountain,
   MousePointer2,
   Pause,
   Pencil,
@@ -52,6 +53,14 @@ import {
   type ClassificationLevel,
   DEFAULT_CLASSIFICATION,
 } from './engine/classification';
+import {
+  ELEVATION_SAMPLE_SPACING_M,
+  type ElevationSample,
+  isNoGo,
+  MOVE_RATES_KMH,
+  type MoveRate,
+  SLOPE_NOGO_THRESHOLD_PERCENT,
+} from './engine/elevationProfile';
 import { ALL_PHASES } from './engine/planFeature';
 import type { Plan, PlanPhase } from './engine/planStore';
 import type { Viewpoint } from './engine/viewpoint';
@@ -491,6 +500,60 @@ export function WorldView() {
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal, mode]);
 
+  // ---------- terrain-reasoning depth (Wave 4, todo 29 — M1 elevation + M4 move timing) ----------
+
+  const [analyzedFeatureId, setAnalyzedFeatureId] = useState<string | null>(null);
+  const [moveRate, setMoveRate] = useState<MoveRate>('dismounted');
+  const elevationChartRef = useRef<HTMLCanvasElement>(null);
+
+  const elevationProfile = useMemo<ElevationSample[]>(
+    () =>
+      analyzedFeatureId ? (sandboxRef.current?.getElevationProfile(analyzedFeatureId) ?? []) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- featureVersion covers edits to the analyzed path
+    [analyzedFeatureId, featureVersion]
+  );
+
+  const moveTimeMinutes = useMemo<number | null>(
+    () =>
+      analyzedFeatureId
+        ? (sandboxRef.current?.getMoveTimeMinutes(analyzedFeatureId, moveRate) ?? null)
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- featureVersion covers edits to the analyzed path
+    [analyzedFeatureId, moveRate, featureVersion]
+  );
+
+  useEffect(() => {
+    const canvas = elevationChartRef.current;
+    if (!canvas || elevationProfile.length === 0) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+
+    const elevations = elevationProfile.map((s) => s.elevationM);
+    const minE = Math.min(...elevations);
+    const maxE = Math.max(...elevations);
+    const range = Math.max(maxE - minE, 1e-3);
+    const maxDist = elevationProfile[elevationProfile.length - 1].distanceAlongM;
+
+    const toXY = (s: ElevationSample): [number, number] => [
+      (s.distanceAlongM / Math.max(maxDist, 1e-3)) * width,
+      height - ((s.elevationM - minE) / range) * height,
+    ];
+
+    for (let i = 1; i < elevationProfile.length; i++) {
+      const [x0, y0] = toXY(elevationProfile[i - 1]);
+      const [x1, y1] = toXY(elevationProfile[i]);
+      ctx.strokeStyle = isNoGo(elevationProfile[i].slopePercent) ? '#ef5350' : '#35d4ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    }
+  }, [elevationProfile]);
+
   // Live camera-pose readout (lon/lat/alt/heading) — this is the metadata a
   // real drone would embed; copy it whenever you take a screenshot.
   useEffect(() => {
@@ -741,6 +804,18 @@ export function WorldView() {
                     aria-label={`Set position for ${f.name} at current timeline phase`}
                   >
                     <MapPin className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {renamingId !== f.id && sandboxRef.current?.isPathFeature(f.id) && (
+                  <button
+                    className={`btn btn-xs px-1 font-normal ${
+                      analyzedFeatureId === f.id ? 'btn-primary' : 'btn-ghost'
+                    }`}
+                    onClick={() => setAnalyzedFeatureId((prev) => (prev === f.id ? null : f.id))}
+                    aria-label={`Analyze ${f.name}`}
+                    title="Elevation profile + move-time analysis"
+                  >
+                    <Mountain className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {renamingId !== f.id && (
@@ -1101,6 +1176,54 @@ export function WorldView() {
                   )}
                 </button>
               </div>
+            </PanelSection>
+          )}
+
+          {analyzedFeatureId && (
+            <PanelSection title="Analysis">
+              {elevationProfile.length > 0 ? (
+                <>
+                  <canvas
+                    ref={elevationChartRef}
+                    width={272}
+                    height={90}
+                    className="mx-2 rounded bg-base-300"
+                    aria-label="Elevation profile chart"
+                  />
+                  <div className="px-2 text-[9px] text-base-content/40">
+                    Sampled every {ELEVATION_SAMPLE_SPACING_M}m from streamed 3D-tile geometry —
+                    vegetation/structures not modelled. Red = past {SLOPE_NOGO_THRESHOLD_PERCENT}%
+                    slope.
+                  </div>
+                </>
+              ) : (
+                <div className="px-2 py-1 text-xs text-base-content/40">
+                  No terrain samples along this path (off the loaded tile area?)
+                </div>
+              )}
+              <div className="divider my-0" />
+              <label className="flex flex-col gap-0.5 px-2 pb-1 text-[10px] uppercase tracking-widest text-base-content/40">
+                Move rate
+                <select
+                  className="select select-bordered select-xs font-normal normal-case"
+                  value={moveRate}
+                  onChange={(e) => setMoveRate(e.target.value as MoveRate)}
+                >
+                  {(Object.keys(MOVE_RATES_KMH) as MoveRate[]).map((rate) => (
+                    <option key={rate} value={rate}>
+                      {rate} ({MOVE_RATES_KMH[rate]} km/h)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {moveTimeMinutes !== null && (
+                <div className="px-2 pb-1 text-xs">
+                  Estimated move time: <strong>{moveTimeMinutes.toFixed(0)} min</strong>{' '}
+                  <span className="text-[9px] text-base-content/40">
+                    (assumed {moveRate} rate — {MOVE_RATES_KMH[moveRate]} km/h)
+                  </span>
+                </div>
+              )}
             </PanelSection>
           )}
         </PanelRail>

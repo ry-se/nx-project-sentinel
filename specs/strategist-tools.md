@@ -558,6 +558,32 @@ viewpoint (invariant 2 — deterministic, and `cancelRehearsal()` interrupts cle
 point, same shape as `cancelBriefPlayback`/`cancelTimelinePlayback`). `pauseRehearsal()` stops
 the auto-advance without resetting position.
 
+## Elevation profile + move timing (`elevationProfile.ts`, `strategist.ts`) — Wave 4, M1+M4
+
+The first Wave-4 tool pair, and the first "select an EXISTING feature and run a computed
+analysis on it" interaction — every prior tool either draws something new or toggles a
+filter. `PATH_FEATURE_TYPES = ['distance', 'axis']` (`strategist.ts`) marks which feature
+types this applies to; the Features panel shows an Analyze button (mountain icon) only for
+those. `StrategistController.computeElevationProfile(featureId)` and
+`computeMoveTimeMinutes(featureId, rate)` are `null` for any non-path feature.
+
+`sampleElevationProfile(points, raycaster, tiles, spacingM)` (default spacing
+`ELEVATION_SAMPLE_SPACING_M = 20`m) walks the path and raycasts straight down at each
+sample via `groundWalk.ts`'s `groundWalkEyeY(..., eyeHeight=0)` — reused, not
+reimplemented. A sample the raycast misses (off the loaded tile area) is DROPPED, never
+fabricated as elevation 0. Slope is computed between consecutive samples; a leg past
+`SLOPE_NOGO_THRESHOLD_PERCENT` (30%) renders red in the WorldView elevation-profile canvas
+chart, blue otherwise. `estimateMoveTimeMinutes(pathLengthM, rate)` reads
+`MOVE_RATES_KMH` (`dismounted: 4`, `mounted: 25`) — a representative, not doctrinal, rate
+table; the UI states the assumed rate on every readout.
+
+Neither the profile nor the move-time estimate persists as its own state — both are
+re-derived live from the path's `PlanFeature` + the current terrain, the same pattern
+`los`'s blocked/clear recompute-on-`rebuildFeature` already establishes. Gate 5
+(`01-analysis/04-army-strategist/04-viability-gates.md` — accuracy & trust) binds every
+Wave-4 UI surface: the chart's caption states its sampling basis and limitation
+("vegetation/structures not modelled"); the move-time readout states the assumed rate.
+
 ## Viewshed (`viewshed.ts`)
 
 ArcGIS-style shadow-mapping repurposed for visibility:

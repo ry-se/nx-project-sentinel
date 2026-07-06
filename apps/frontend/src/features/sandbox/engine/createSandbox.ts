@@ -25,6 +25,7 @@ import {
   SphereRegion,
 } from '3d-tiles-renderer/plugins';
 
+import type { ElevationSample, MoveRate } from './elevationProfile';
 import { type FeatureSummary, StrategistController, type StratTool } from './strategist';
 import type { Affiliation, Echelon } from './unitSymbol';
 import {
@@ -169,6 +170,9 @@ export interface Sandbox {
   armSetUnitPhasePosition(featureId: string, phaseId: string): void;
   cancelSetUnitPhasePosition(): void;
   isArmedForPhasePosition(): boolean;
+  isPathFeature(featureId: string): boolean;
+  getElevationProfile(featureId: string): ElevationSample[] | null;
+  getMoveTimeMinutes(featureId: string, rate: MoveRate): number | null;
   setClassification(level: ClassificationLevel): void;
   getClassification(): ClassificationLevel;
   setOperatorName(name: string): void;
@@ -906,6 +910,9 @@ export function createSandbox(
       strategist.armSetUnitPhasePosition(featureId, phaseId),
     cancelSetUnitPhasePosition: () => strategist.cancelSetUnitPhasePosition(),
     isArmedForPhasePosition: () => strategist.isArmedForPhasePosition,
+    isPathFeature: (featureId) => strategist.isPathFeature(featureId),
+    getElevationProfile: (featureId) => strategist.computeElevationProfile(featureId),
+    getMoveTimeMinutes: (featureId, rate) => strategist.computeMoveTimeMinutes(featureId, rate),
     switchVehicle: (type) => {
       vehicles.switchTo(type);
       orbitDist = vehicles.cameraDist;
