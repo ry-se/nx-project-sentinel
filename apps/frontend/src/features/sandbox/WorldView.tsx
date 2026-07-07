@@ -37,7 +37,7 @@ import {
   Undo2,
   Waves,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type CameraPose,
@@ -69,13 +69,32 @@ import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strate
 import type { Affiliation, Echelon } from './engine/unitSymbol';
 import { type SystemId, WEAPON_SYSTEMS } from './engine/weaponSystems';
 import type { VehicleType } from './engine/vehicles';
-import { IntelImport } from './IntelImport';
+import { getLocalStorageItem, removeLocalStorageItem, setLocalStorageItem } from './safeStorage';
 import { PanelRail } from './ui/PanelRail';
 import { PanelSection } from './ui/PanelSection';
 
-import { SANDBOX_COMMON, SANDBOX_WORLD_VIEW } from '@/constants';
+import { SANDBOX_COMMON, SANDBOX_WORLD_VIEW } from '@/constants/sandbox';
 
 const KEY_STORAGE = 'google_tiles_key';
+
+const modalComponents = {
+  IntelImport: lazy(() => import('./IntelImport').then((module) => ({ default: module.IntelImport }))),
+};
+
+function IntelImportFallback() {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="rounded-box flex items-center gap-3 bg-base-100 px-5 py-4 shadow-xl">
+        <span className="loading loading-spinner text-primary" />
+        <span className="text-sm">Loading importer...</span>
+      </div>
+    </div>
+  );
+}
 
 // SPAWN_LOCATIONS imported from shared module
 
@@ -119,7 +138,7 @@ const VEHICLES: Array<{ id: VehicleType; label: string; key: string; Icon?: Luci
 
 function getStoredKey(): string | null {
   const env = (import.meta.env.VITE_GOOGLE_TILES_KEY as string | undefined) ?? null;
-  return env ?? localStorage.getItem(KEY_STORAGE);
+  return env ?? getLocalStorageItem(KEY_STORAGE);
 }
 
 interface WorldViewProps {
@@ -649,12 +668,12 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
   const submitKey = (): void => {
     const trimmed = keyDraft.trim();
     if (!trimmed) return;
-    localStorage.setItem(KEY_STORAGE, trimmed);
+    setLocalStorageItem(KEY_STORAGE, trimmed);
     setApiKey(trimmed);
   };
 
   const resetKey = (): void => {
-    localStorage.removeItem(KEY_STORAGE);
+    removeLocalStorageItem(KEY_STORAGE);
     setApiKey(null);
     setFatal(null);
   };
@@ -1306,7 +1325,8 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
                       of route
                       exposed{' '}
                       <span className="text-[9px] text-base-content/40">
-                        (computed from {features.find((f) => f.id === exposureThreatId)?.name}'s
+                        (computed from {features.find((f) => f.id === exposureThreatId)?.name}
+                        &apos;s
                         position,
                         {exposureResult.sampleCount} samples every {ELEVATION_SAMPLE_SPACING_M}
                         m)
@@ -1427,15 +1447,17 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
 
       {/* Intel import modal */}
       {showImport && (
-        <IntelImport
-          currentPose={pose}
-          onDeploy={(p, anns, img, provenance) =>
-            sandboxRef.current
-              ? sandboxRef.current.deployFromImage(p, anns, img, provenance)
-              : { detections: [], placed: 0, failed: anns.length }
-          }
-          onClose={() => setShowImport(false)}
-        />
+        <Suspense fallback={<IntelImportFallback />}>
+          <modalComponents.IntelImport
+            currentPose={pose}
+            onDeploy={(p, anns, img, provenance) =>
+              sandboxRef.current
+                ? sandboxRef.current.deployFromImage(p, anns, img, provenance)
+                : { detections: [], placed: 0, failed: anns.length }
+            }
+            onClose={() => setShowImport(false)}
+          />
+        </Suspense>
       )}
 
       {/* Attribution (required by Google ToS) */}

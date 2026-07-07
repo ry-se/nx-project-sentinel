@@ -1,4 +1,4 @@
-import { CANVAS } from '@/constants';
+import { CANVAS } from '@/constants/canvas';
 
 /** Draws one oriented bounding box (rear→front axis + width) on a canvas already scaled
  * to `scale`. Shared by IntelImport's manual/auto annotation canvas and the standalone

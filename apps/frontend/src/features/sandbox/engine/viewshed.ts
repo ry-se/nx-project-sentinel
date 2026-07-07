@@ -5,7 +5,9 @@ import {
 } from 'three'
 import type { TilesRenderer } from '3d-tiles-renderer'
 
-import { VIEWSHED } from '@/constants'
+import { disposeObject3D } from './disposeThree'
+
+import { VIEWSHED } from '@/constants/engine'
 
 /**
  * ArcGIS-style viewshed: renders a depth map from an observer's eye and tints
@@ -18,7 +20,9 @@ export class ViewshedController {
   private depthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, blending: NoBlending })
   private helper: CameraHelper | null = null
   private scene: Scene
+  private tiles: TilesRenderer
   private enabled = false
+  private readonly onLoadModel = (e: { scene: Object3D }): void => this.patchModel(e.scene)
 
   private uniforms = {
     uVsEnabled: { value: 0 },
@@ -28,6 +32,7 @@ export class ViewshedController {
 
   constructor(scene: Scene, tiles: TilesRenderer) {
     this.scene = scene
+    this.tiles = tiles
     this.depthCam = new PerspectiveCamera(VIEWSHED.V_FOV_DEG, hAspect(), 2, VIEWSHED.FAR_PLANE)
     this.depthCam.layers.set(0) // tiles only — overlays/tank live on layer 1
     this.depthTarget = new WebGLRenderTarget(VIEWSHED.DEPTH_RES, VIEWSHED.DEPTH_RES)
@@ -35,7 +40,7 @@ export class ViewshedController {
 
     // Patch every tile material (current and future) with the viewshed shader
     tiles.forEachLoadedModel(model => this.patchModel(model))
-    tiles.addEventListener('load-model', (e: { scene: Object3D }) => this.patchModel(e.scene))
+    tiles.addEventListener('load-model', this.onLoadModel)
   }
 
   /** Aim the analysis wedge from observer toward target; range = distance. */
@@ -75,6 +80,18 @@ export class ViewshedController {
 
   public get active(): boolean {
     return this.enabled
+  }
+
+  public dispose(): void {
+    this.disable()
+    this.tiles.removeEventListener('load-model', this.onLoadModel)
+    if (this.helper) {
+      disposeObject3D(this.helper)
+      this.helper = null
+    }
+    this.depthTarget.dispose()
+    this.depthMaterial.dispose()
+    this.uniforms.uVsDepth.value = null
   }
 
   /** Re-render the observer depth map. Call once per frame while active —

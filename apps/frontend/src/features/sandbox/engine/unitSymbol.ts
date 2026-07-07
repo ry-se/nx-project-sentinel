@@ -1,6 +1,6 @@
 import { CanvasTexture, Group, Sprite, SpriteMaterial, Vector3 } from 'three';
 
-import { SANDBOX_MISC } from '@/constants';
+import { SANDBOX_MISC } from '@/constants/sandbox';
 
 export type Affiliation = 'friendly' | 'enemy' | 'neutral';
 export type Echelon =

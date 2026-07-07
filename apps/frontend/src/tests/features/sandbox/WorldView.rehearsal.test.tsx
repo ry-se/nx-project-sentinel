@@ -14,6 +14,7 @@ import { loadPlan, savePlan } from '../../../features/sandbox/engine/planStore';
 import { resolveRehearsalStep } from '../../../features/sandbox/engine/rehearsal';
 import { StrategistController } from '../../../features/sandbox/engine/strategist';
 import { ViewshedController } from '../../../features/sandbox/engine/viewshed';
+import type { CameraPose } from '../../../features/sandbox/engine/createSandbox';
 
 /**
  * Todo 27 — guided rehearsal playback + the Wave-3 gate. Covers the four stated
@@ -268,7 +269,7 @@ describe('StrategistController — guided rehearsal wired end-to-end', () => {
   });
 });
 
-function mockPose() {
+function mockPose(): CameraPose {
   return {
     type: 'sentinel-camera-pose' as const,
     version: 1,

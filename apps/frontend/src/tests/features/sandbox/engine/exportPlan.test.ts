@@ -99,6 +99,7 @@ function mixedPlan(): Plan {
     features: [distanceFeature(), focusFeature(), axisFeature(), objectiveFeature(), unitFeature()],
     viewpoints: [],
     classification: 'RESTRICTED',
+    phases: [],
   };
 }
 

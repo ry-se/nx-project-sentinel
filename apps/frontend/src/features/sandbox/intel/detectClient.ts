@@ -1,5 +1,5 @@
 import type { CameraPose, ImageAnnotation } from '../engine/createSandbox';
-import { DETECTION_CLASSES, type DetectionClass } from '../engine/detections';
+import { DETECTION_CLASSES, type DetectionClass } from '../detectionSchema';
 
 export type DetectClientErrorKind =
   | 'no_backend_configured'

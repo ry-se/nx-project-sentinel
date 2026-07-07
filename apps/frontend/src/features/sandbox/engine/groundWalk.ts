@@ -7,7 +7,7 @@ import {
   Vector3,
 } from 'three';
 
-import { SANDBOX_COMMON, SANDBOX_MISC } from '@/constants';
+import { SANDBOX_COMMON, SANDBOX_MISC } from '@/constants/sandbox';
 
 /** A standing soldier's eye height above the ground — extends the LOS `EYE_HEIGHT`
  * naming convention (`planFeature.ts`) into this distinct domain (invariant 4). */

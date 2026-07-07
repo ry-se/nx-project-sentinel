@@ -1,5 +1,4 @@
 import { TilesRenderer } from '3d-tiles-renderer';
-import { OBJECT_FRAME } from '3d-tiles-renderer/three';
 import {
   DoubleSide,
   Group,
@@ -45,8 +44,7 @@ function setupTilesAtAnchor(anchor: { lat: number; lon: number }): TilesRenderer
     0,
     0,
     0,
-    tiles.group.matrix,
-    OBJECT_FRAME
+    tiles.group.matrix
   );
   tiles.group.matrix
     .invert()
@@ -57,7 +55,7 @@ function setupTilesAtAnchor(anchor: { lat: number; lon: number }): TilesRenderer
 
 const ANCHOR = { lat: 1.35, lon: 103.8 };
 
-const POINTS_BY_TYPE: Record<PlanFeatureType, Vector3[]> = {
+const POINTS_BY_TYPE = {
   distance: [new Vector3(0, 0, 0), new Vector3(50, 0, 0)],
   focus: [
     new Vector3(0, 0, 0),
@@ -67,7 +65,7 @@ const POINTS_BY_TYPE: Record<PlanFeatureType, Vector3[]> = {
   ],
   arc: [new Vector3(0, 0, 0), new Vector3(80, 0, 0), new Vector3(0, 0, 80)],
   los: [new Vector3(0, 0, 0), new Vector3(100, 0, 0)],
-};
+} satisfies Partial<Record<PlanFeatureType, Vector3[]>>;
 
 describe('planFeature — serializeFeature/rebuildFeature round-trip (todo 11)', () => {
   beforeEach(() => {

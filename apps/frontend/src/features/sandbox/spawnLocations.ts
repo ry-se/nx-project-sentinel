@@ -1,3 +1,5 @@
+import { getLocalStorageItem, setLocalStorageItem } from './safeStorage';
+
 export const SPAWN_STORAGE_KEY = 'spawn_location_key';
 
 export const SPAWN_LOCATIONS = [
@@ -39,10 +41,10 @@ export const SPAWN_LOCATIONS = [
 ];
 
 export function getStoredSpawnKey(): string {
-  return localStorage.getItem(SPAWN_STORAGE_KEY) ?? 'manhattan';
+  return getLocalStorageItem(SPAWN_STORAGE_KEY) ?? 'manhattan';
 }
 
 export function setStoredSpawnKey(key: string): void {
-  localStorage.setItem(SPAWN_STORAGE_KEY, key);
+  setLocalStorageItem(SPAWN_STORAGE_KEY, key);
   window.dispatchEvent(new CustomEvent('spawnLocationChanged', { detail: key }));
 }

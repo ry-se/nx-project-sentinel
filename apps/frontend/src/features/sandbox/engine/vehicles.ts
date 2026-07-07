@@ -7,8 +7,9 @@ import type { ProjectileManager } from './projectiles'
 import type { ModelLibrary } from './modelCatalog'
 import { type BombDrop, Vehicle, type VehicleState, type VehicleType } from './vehicleBase'
 import { SpiderVehicle } from './spiderman'
+import { disposeObject3D } from './disposeThree'
 
-import { SANDBOX_COMMON, SANDBOX_VEHICLES } from '@/constants'
+import { SANDBOX_COMMON, SANDBOX_VEHICLES } from '@/constants/sandbox'
 
 export { Vehicle, DOWN } from './vehicleBase'
 export type { VehicleType, VehicleState, BombDrop } from './vehicleBase'
@@ -311,6 +312,14 @@ export class VehicleManager {
   private keys = new Set<string>()
   private projectiles: ProjectileManager
   private lastFiredAt = 0
+  private readonly onKeyDown = (e: KeyboardEvent): void => {
+    const el = e.target as HTMLElement | null
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+    this.keys.add(e.key.toLowerCase())
+  }
+  private readonly onKeyUp = (e: KeyboardEvent): void => {
+    this.keys.delete(e.key.toLowerCase())
+  }
 
   constructor(scene: Scene, projectiles: ProjectileManager, lib: ModelLibrary) {
     this.projectiles = projectiles
@@ -327,12 +336,8 @@ export class VehicleManager {
     }
     this.vehicles.tank.object.visible = true
 
-    window.addEventListener('keydown', e => {
-      const el = e.target as HTMLElement | null
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
-      this.keys.add(e.key.toLowerCase())
-    })
-    window.addEventListener('keyup', e => this.keys.delete(e.key.toLowerCase()))
+    window.addEventListener('keydown', this.onKeyDown)
+    window.addEventListener('keyup', this.onKeyUp)
   }
 
   public get active(): Vehicle {
@@ -413,6 +418,15 @@ export class VehicleManager {
     if (s.rolling)     text += '\n↻ BARREL ROLL'
     if (s.mode)        text += `\n🕸 ${s.mode}`
     return text
+  }
+
+  public dispose(): void {
+    window.removeEventListener('keydown', this.onKeyDown)
+    window.removeEventListener('keyup', this.onKeyUp)
+    this.keys.clear()
+    for (const vehicle of Object.values(this.vehicles)) {
+      disposeObject3D(vehicle.object)
+    }
   }
 }
 

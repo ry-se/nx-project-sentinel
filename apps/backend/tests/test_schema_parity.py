@@ -11,8 +11,8 @@ from app.schemas import DetectionClass
 
 # apps/backend/tests/test_schema_parity.py -> apps/backend/tests -> apps/backend -> apps -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FRONTEND_DETECTIONS_TS = (
-    REPO_ROOT / "apps/frontend/src/features/sandbox/engine/detections.ts"
+FRONTEND_DETECTION_SCHEMA_TS = (
+    REPO_ROOT / "apps/frontend/src/features/sandbox/detectionSchema.ts"
 )
 
 _TS_UNION_RE = re.compile(
@@ -22,17 +22,17 @@ _TS_LITERAL_RE = re.compile(r"'([a-z_]+)'")
 
 
 def _extract_frontend_detection_classes() -> set[str]:
-    """Parses `export type DetectionClass = 'a' | 'b' | 'c';` out of detections.ts.
+    """Parses `export type DetectionClass = 'a' | 'b' | 'c';` out of detectionSchema.ts.
     Raises loudly (not returns empty) if the source no longer matches the expected
     shape — a silently-empty extraction would make this test vacuously pass."""
-    assert FRONTEND_DETECTIONS_TS.is_file(), (
-        f"frontend source not found at {FRONTEND_DETECTIONS_TS} — schema-parity check "
+    assert FRONTEND_DETECTION_SCHEMA_TS.is_file(), (
+        f"frontend source not found at {FRONTEND_DETECTION_SCHEMA_TS} — schema-parity check "
         "cannot run against a moved/renamed file without updating this test"
     )
-    source = FRONTEND_DETECTIONS_TS.read_text()
+    source = FRONTEND_DETECTION_SCHEMA_TS.read_text()
     match = _TS_UNION_RE.search(source)
     assert match is not None, (
-        "could not find `export type DetectionClass = ...;` in detections.ts — "
+        "could not find `export type DetectionClass = ...;` in detectionSchema.ts — "
         "the type declaration shape changed; update the regex in this test"
     )
     values = set(_TS_LITERAL_RE.findall(match.group(1)))
@@ -48,7 +48,7 @@ def test_backend_detection_class_matches_frontend_detection_class():
         f"schema drift: backend DetectionClass={sorted(backend_classes)} != "
         f"frontend DetectionClass={sorted(frontend_classes)} "
         "(apps/backend/app/schemas.py vs "
-        "apps/frontend/src/features/sandbox/engine/detections.ts)"
+        "apps/frontend/src/features/sandbox/detectionSchema.ts)"
     )
 
 

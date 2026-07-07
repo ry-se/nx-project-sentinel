@@ -81,7 +81,8 @@ describe('planStore — save/load/list/delete (todo 17)', () => {
 
   it('an unknown schema version fails loud, not silently', () => {
     const saved = savePlan('X', [], ANCHOR, '2026-07-05T00:00:00.000Z');
-    const raw = localStorage.getItem(`sentinel.plan.${saved.id}`)!;
+    const raw = localStorage.getItem(`sentinel.plan.${saved.id}`);
+    if (raw === null) throw new Error('expected saved plan fixture');
     const corrupted = { ...JSON.parse(raw), version: 999 };
     localStorage.setItem(`sentinel.plan.${saved.id}`, JSON.stringify(corrupted));
 
@@ -106,5 +107,22 @@ describe('planStore — save/load/list/delete (todo 17)', () => {
 
     expect(listPlans()).toHaveLength(0);
     expect(() => loadPlan(saved.id)).toThrow(/No saved plan/);
+  });
+
+  it('listPlans treats storage iteration failures as unavailable storage', () => {
+    vi.spyOn(Storage.prototype, 'key').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+
+    expect(listPlans()).toEqual([]);
+  });
+
+  it('deletePlan remains best-effort if removeItem fails after storage probing', () => {
+    const saved = savePlan('Best Effort', [], ANCHOR, '2026-07-05T00:00:00.000Z');
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+
+    expect(() => deletePlan(saved.id)).not.toThrow();
   });
 });

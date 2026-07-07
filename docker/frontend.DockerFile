@@ -12,8 +12,8 @@ COPY packages ./packages
 
 RUN npm ci
 
-RUN npx nx build frontend
+RUN npx nx build @org/frontend
 
 EXPOSE 4200
 
-CMD ["npx", "nx", "serve", "frontend", "--host=0.0.0.0"]
+CMD ["npx", "nx", "serve", "@org/frontend", "--host=0.0.0.0"]

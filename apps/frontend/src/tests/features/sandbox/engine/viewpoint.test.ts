@@ -1,5 +1,5 @@
 import { TilesRenderer } from '3d-tiles-renderer';
-import { Group, PerspectiveCamera, Quaternion, Scene, Vector3 } from 'three';
+import { Group, PerspectiveCamera, Quaternion, Scene } from 'three';
 
 import type { CameraPose } from '../../../../features/sandbox/engine/createSandbox';
 import { GeoFrame } from '../../../../features/sandbox/engine/geoFrame';

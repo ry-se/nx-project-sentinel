@@ -1,13 +1,11 @@
 import { TilesRenderer } from '3d-tiles-renderer';
 import {
-  DoubleSide,
   Group,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
   PerspectiveCamera,
   Scene,
-  Vector3,
 } from 'three';
 
 import { GeoFrame } from '../../../../features/sandbox/engine/geoFrame';

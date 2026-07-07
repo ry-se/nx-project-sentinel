@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { WorldView } from '../../../features/sandbox/WorldView';
 import type { FeatureSummary } from '../../../features/sandbox/engine/strategist';
-import type { Sandbox, SandboxCallbacks } from '../../../features/sandbox/engine/createSandbox';
+import type {
+  CameraPose,
+  Sandbox,
+  SandboxCallbacks,
+} from '../../../features/sandbox/engine/createSandbox';
 
 /**
  * Todo 12: the feature-list panel's React wiring — list/select/rename/delete/undo call the
@@ -66,7 +70,7 @@ const fakeSandbox: Partial<Sandbox> = {
   isRehearsing: vi.fn(() => false),
   switchVehicle: vi.fn(),
   setLabelsVisible: vi.fn(),
-  getCameraPose: vi.fn(() => ({
+  getCameraPose: vi.fn((): CameraPose => ({
     type: 'sentinel-camera-pose',
     version: 1,
     capturedAt: '2026-07-05T00:00:00.000Z',
@@ -104,6 +108,10 @@ vi.mock('../../../features/sandbox/engine/createSandbox', async () => {
     ),
   };
 });
+
+vi.mock('../../../features/sandbox/IntelImport', () => ({
+  IntelImport: () => <div data-testid="intel-import-mock" />,
+}));
 
 async function mountInStrategistMode(): Promise<void> {
   vi.stubEnv('VITE_GOOGLE_TILES_KEY', 'test-key');
@@ -184,5 +192,14 @@ describe('WorldView — feature list panel (todo 12)', () => {
     await waitFor(() => expect(screen.getByText('Features (0)')).toBeInTheDocument());
     expect(screen.getByText(/No features placed yet/)).toBeInTheDocument();
     expect(screen.getByLabelText('Undo last placed feature')).toBeDisabled();
+  });
+
+  it('loads the intel importer only after the operator asks for it', async () => {
+    await mountInStrategistMode();
+
+    expect(screen.queryByTestId('intel-import-mock')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Import intel/i }));
+
+    expect(await screen.findByTestId('intel-import-mock')).toBeInTheDocument();
   });
 });

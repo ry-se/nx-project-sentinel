@@ -1,6 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "paths": {
+      "@/constants": ["./src/constants"],
+      "@/constants/*": ["./src/constants/*"]
+    },
     "outDir": "./out-tsc/vitest",
     "lib": ["es2022", "dom"],
     "types": [

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CameraPose } from '../engine/createSandbox';
 
@@ -25,6 +25,7 @@ const DEFAULT_POSE = { lat: 1.3521, lon: 103.8198, altM: 200, headingDeg: 0, pit
 export function DetectDebug() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   const [imageName, setImageName] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
@@ -34,17 +35,32 @@ export function DetectDebug() {
   const [run, setRun] = useState<RunState>({ status: 'idle' });
   const [result, setResult] = useState<DetectResult | null>(null);
 
+  const revokeObjectUrl = useCallback((): void => {
+    if (!objectUrlRef.current) return;
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = null;
+  }, []);
+
+  useEffect(() => revokeObjectUrl, [revokeObjectUrl]);
+
   const onFile = (file: File | undefined): void => {
     if (!file) return;
+    revokeObjectUrl();
     const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
     const img = new Image();
     img.onload = () => {
+      if (objectUrlRef.current !== url) return;
       imageRef.current = img;
       setImageName(file.name);
       setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
       setScale(Math.min(CANVAS_MAX_W / img.naturalWidth, CANVAS_MAX_H / img.naturalHeight, 1));
       setResult(null);
       setRun({ status: 'idle' });
+      revokeObjectUrl();
+    };
+    img.onerror = () => {
+      if (objectUrlRef.current === url) revokeObjectUrl();
     };
     img.src = url;
   };

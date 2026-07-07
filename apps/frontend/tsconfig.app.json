@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@/constants": ["./src/constants"]
+      "@/constants": ["./src/constants"],
+      "@/constants/*": ["./src/constants/*"]
     },
     "outDir": "dist",
     "tsBuildInfoFile": "dist/tsconfig.app.tsbuildinfo",

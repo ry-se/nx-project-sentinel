@@ -3,12 +3,12 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "lint": "nx lint",
-    "test": "nx test",
-    "build": "nx build",
-    "affected:build": "nx affected -t build",
-    "affected:test": "nx affected -t test",
-    "docker:build": "nx run-many -t docker-build --all"
+    "lint": "NX_ISOLATE_PLUGINS=false nx run-many -t lint",
+    "test": "NX_ISOLATE_PLUGINS=false nx run-many -t test",
+    "build": "NX_ISOLATE_PLUGINS=false nx run-many -t build",
+    "affected:build": "NX_ISOLATE_PLUGINS=false nx affected -t build",
+    "affected:test": "NX_ISOLATE_PLUGINS=false nx affected -t test",
+    "docker:build": "docker compose build"
   },
   "private": true,
   "devDependencies": {
@@ -55,7 +55,7 @@
   },
   "workspaces": [
     "packages/*",
-    "frontend"
+    "apps/frontend"
   ],
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",

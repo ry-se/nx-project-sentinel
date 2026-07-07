@@ -4,7 +4,9 @@ import {
   SpriteMaterial, Vector3,
 } from 'three'
 
-import { SANDBOX_PROJECTILES } from '@/constants'
+import { disposeObject3D } from './disposeThree'
+
+import { SANDBOX_PROJECTILES } from '@/constants/sandbox'
 
 const GRAVITY = SANDBOX_PROJECTILES.GRAVITY
 const MAX_LIFE = SANDBOX_PROJECTILES.MAX_LIFE
@@ -102,7 +104,7 @@ export class ProjectileManager {
       const pt = this.particles[i]
       pt.life += dt
       if (pt.life >= pt.maxLife) {
-        this.root.remove(pt.sprite)
+        disposeObject3D(pt.sprite, { disposeTextures: false })
         this.particles.splice(i, 1)
         continue
       }
@@ -179,9 +181,33 @@ export class ProjectileManager {
     this.root.add(scorch)
     this.scorches.push(scorch)
     if (this.scorches.length > MAX_SCORCH) {
-      const old = this.scorches.shift()!
-      this.root.remove(old)
+      const old = this.scorches.shift()
+      if (old) disposeObject3D(old, { disposeTextures: false })
     }
+  }
+
+  public dispose(): void {
+    for (const projectile of this.projectiles) {
+      this.root.remove(projectile.mesh)
+    }
+    this.projectiles = []
+
+    for (const particle of this.particles) {
+      disposeObject3D(particle.sprite, { disposeTextures: false })
+    }
+    this.particles = []
+
+    for (const scorch of this.scorches) {
+      disposeObject3D(scorch, { disposeTextures: false })
+    }
+    this.scorches = []
+
+    this.shellGeo.dispose()
+    this.shellMat.dispose()
+    this.fireTexture.dispose()
+    this.smokeTexture.dispose()
+    this.scorchTexture.dispose()
+    this.root.removeFromParent()
   }
 
   private spawnParticle(
@@ -215,7 +241,8 @@ function radialTexture(inner: string, outer: string): CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE
   canvas.height = SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
   const grad = ctx.createRadialGradient(
     SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,
     SANDBOX_PROJECTILES.DECAL_CANVAS_SIZE / 2,

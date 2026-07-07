@@ -9,7 +9,7 @@ import {
   toLocalPoint,
 } from './planFeature';
 
-import { SANDBOX_COMMON, SANDBOX_MISC } from '@/constants';
+import { SANDBOX_COMMON, SANDBOX_MISC } from '@/constants/sandbox';
 
 /** Sample spacing along a path (metres) — a named constant, not a magic literal at the
  * call site (Wave-4 invariant, same convention as `briefPlayback.ts`'s

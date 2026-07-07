@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Byte-match contract: apps/frontend/src/features/sandbox/engine/detections.ts::DetectionClass
+# Byte-match contract: apps/frontend/src/features/sandbox/detectionSchema.ts::DetectionClass
 DetectionClass = Literal[
     "armored_fighting_vehicle",
     "light_military_vehicle",

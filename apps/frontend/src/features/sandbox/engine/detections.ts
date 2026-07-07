@@ -12,17 +12,12 @@ import {
   Vector3,
 } from 'three';
 
+import type { DetectionClass } from '../detectionSchema';
+
+import { disposeObject3D, disposeObjectChildren } from './disposeThree';
 import type { ModelLibrary } from './modelCatalog';
 
-import { SANDBOX_DETECTIONS } from '@/constants';
-
-export type DetectionClass = 'armored_fighting_vehicle' | 'light_military_vehicle' | 'aircraft';
-
-export const DETECTION_CLASSES: Array<{ id: DetectionClass; label: string }> = [
-  { id: 'armored_fighting_vehicle', label: 'AFV (tank)' },
-  { id: 'light_military_vehicle', label: 'LMV (light vehicle)' },
-  { id: 'aircraft', label: 'Aircraft' },
-];
+import { SANDBOX_DETECTIONS } from '@/constants/sandbox';
 
 /** Locked Sentinel detection schema — the AI service must emit this too.
  * `method`/`model`/`detected_at`/`uncertainty_m` are additive (W4) — existing consumers
@@ -116,7 +111,11 @@ export class DetectionLayer {
   }
 
   public clear(): void {
-    this.root.clear();
+    disposeObjectChildren(this.root);
+  }
+
+  public dispose(): void {
+    disposeObject3D(this.root);
   }
 
   public get count(): number {
@@ -217,7 +216,8 @@ function buildModel(cls: DetectionClass): Group {
 
 function makeTag(text: string): Sprite {
   const canvas = document.createElement('canvas');
-  const measure = canvas.getContext('2d')!;
+  const measure = canvas.getContext('2d');
+  if (!measure) throw new Error('2D canvas context unavailable');
   measure.font = `600 ${SANDBOX_DETECTIONS.TAG_FONT_SIZE}px monospace`;
   canvas.width = Math.min(
     Math.ceil(measure.measureText(text).width) + SANDBOX_DETECTIONS.TAG_PADDING_X,
@@ -225,13 +225,12 @@ function makeTag(text: string): Sprite {
   );
   canvas.height = SANDBOX_DETECTIONS.TAG_HEIGHT;
 
-  const ctx = canvas.getContext('2d')!;
-  ctx.font = `600 ${SANDBOX_DETECTIONS.TAG_FONT_SIZE}px monospace`;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(140, 20, 20, 0.92)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, SANDBOX_DETECTIONS.TAG_PADDING_X / 2, SANDBOX_DETECTIONS.TAG_BASELINE_Y);
+  measure.font = `600 ${SANDBOX_DETECTIONS.TAG_FONT_SIZE}px monospace`;
+  measure.textBaseline = 'middle';
+  measure.fillStyle = 'rgba(140, 20, 20, 0.92)';
+  measure.fillRect(0, 0, canvas.width, canvas.height);
+  measure.fillStyle = '#ffffff';
+  measure.fillText(text, SANDBOX_DETECTIONS.TAG_PADDING_X / 2, SANDBOX_DETECTIONS.TAG_BASELINE_Y);
 
   const sprite = new Sprite(
     new SpriteMaterial({

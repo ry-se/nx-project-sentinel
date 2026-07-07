@@ -1,5 +1,4 @@
 import { TilesRenderer } from '3d-tiles-renderer';
-import { OBJECT_FRAME } from '3d-tiles-renderer/three';
 import { Group, MathUtils, Raycaster, Vector3 } from 'three';
 
 import { GeoFrame } from '../../../../features/sandbox/engine/geoFrame';
@@ -42,8 +41,7 @@ function setupTilesAtAnchor(anchor: { lat: number; lon: number }): TilesRenderer
     0,
     0,
     0,
-    tiles.group.matrix,
-    OBJECT_FRAME
+    tiles.group.matrix
   );
   tiles.group.matrix
     .invert()

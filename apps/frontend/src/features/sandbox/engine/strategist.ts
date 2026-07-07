@@ -29,6 +29,8 @@ import {
   isFeatureVisibleForPhase,
   type LinearMeasureType,
   marker,
+  MAT_LOS_BLOCKED,
+  MAT_LOS_CLEAR,
   MAT_MEASURE,
   pathLength,
   type PlanFeature,
@@ -69,8 +71,9 @@ import {
   DEFAULT_CLASSIFICATION,
   type Provenance,
 } from './classification';
+import { disposeObject3D, disposeObjectChildren } from './disposeThree';
 
-import { SANDBOX_STRATEGIST } from '@/constants';
+import { SANDBOX_STRATEGIST } from '@/constants/sandbox';
 
 export type StratTool =
   | 'select'
@@ -120,6 +123,7 @@ export function findNearestUnit(
 }
 
 const LINEAR_MEASURE_TOOLS: LinearMeasureType[] = ['boundary', 'phaseline', 'loa'];
+const PLAN_SHARED_MATERIALS = [MAT_MEASURE, MAT_LOS_CLEAR, MAT_LOS_BLOCKED];
 const LINEAR_MEASURE_NAME_PREFIX: Record<LinearMeasureType, string> = {
   boundary: 'BDRY',
   phaseline: 'PL',
@@ -285,25 +289,9 @@ export class StrategistController {
     window.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
-    canvas.addEventListener('contextmenu', (e) => {
-      if (this.enabled) e.preventDefault();
-    });
-    window.addEventListener('keydown', (e) => {
-      if (!this.enabled) return;
-      if (e.key === 'Escape') {
-        if (this.groundWalkController.isActive) this.exitGroundWalk();
-        else this.cancelDraft();
-        return;
-      }
-      const direction = GROUND_WALK_KEY_MAP[e.key];
-      if (direction && this.groundWalkController.isActive)
-        this.groundWalkController.setMoving(direction, true);
-    });
-    window.addEventListener('keyup', (e) => {
-      if (!this.enabled) return;
-      const direction = GROUND_WALK_KEY_MAP[e.key];
-      if (direction) this.groundWalkController.setMoving(direction, false);
-    });
+    canvas.addEventListener('contextmenu', this.onContextMenu);
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
   }
 
   public enable(center: Vector3): void {
@@ -323,6 +311,26 @@ export class StrategistController {
     this.cancelDraft();
   }
 
+  public dispose(): void {
+    this.disable();
+    this.cancelBriefPlayback();
+    this.cancelTimelinePlayback();
+    this.canvas.removeEventListener('pointerdown', this.onDown);
+    window.removeEventListener('pointermove', this.onMove);
+    window.removeEventListener('pointerup', this.onUp);
+    this.canvas.removeEventListener('wheel', this.onWheel);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    this.features = [];
+    this.phases = [];
+    this.pendingPhasePosition = null;
+    disposeObject3D(this.featureRoot, { preserveMaterials: PLAN_SHARED_MATERIALS });
+    disposeObject3D(this.previewRoot, { preserveMaterials: PLAN_SHARED_MATERIALS });
+    disposeObject3D(this.selectionRoot, { preserveMaterials: PLAN_SHARED_MATERIALS });
+    disposeObject3D(this.analysisRoot, { preserveMaterials: PLAN_SHARED_MATERIALS });
+  }
+
   public setTool(tool: StratTool): void {
     this.cancelDraft();
     this.tool = tool;
@@ -330,14 +338,22 @@ export class StrategistController {
     this.onToolChanged(tool);
   }
 
+  private clearRoot(root: Group): void {
+    disposeObjectChildren(root, { preserveMaterials: PLAN_SHARED_MATERIALS });
+  }
+
+  private disposeFeatureGroup(group: Group): void {
+    disposeObject3D(group, { preserveMaterials: PLAN_SHARED_MATERIALS });
+  }
+
   public clearAll(): void {
     this.cancelDraft();
-    for (const f of this.features) this.featureRoot.remove(f.group);
+    for (const f of this.features) this.disposeFeatureGroup(f.group);
     this.features = [];
     this.phases = [];
     this.phaseFilter = ALL_PHASES;
     this.timelineStepper.cancel();
-    this.analysisRoot.clear();
+    this.clearRoot(this.analysisRoot);
     this.clearSelection();
     this.viewshed.disable();
     this.onStatus('All features cleared');
@@ -824,7 +840,7 @@ export class StrategistController {
     const threatEye = new Vector3(threatPoint.x, threatPoint.y, threatPoint.z);
 
     const samples = sampleRouteExposure(points, threatEye, this.raycaster, this.tiles);
-    this.analysisRoot.clear();
+    this.clearRoot(this.analysisRoot);
     const overlay = buildRouteExposureGroup(samples);
     overlay.traverse((o) => o.layers.set(1));
     this.analysisRoot.add(overlay);
@@ -832,14 +848,14 @@ export class StrategistController {
   }
 
   public clearRouteExposureOverlay(): void {
-    this.analysisRoot.clear();
+    this.clearRoot(this.analysisRoot);
   }
 
   public removeFeature(id: string): void {
     const idx = this.features.findIndex((f) => f.id === id);
     if (idx === -1) return;
     const [removed] = this.features.splice(idx, 1);
-    this.featureRoot.remove(removed.group);
+    this.disposeFeatureGroup(removed.group);
     if (this.selectedId === id) this.clearSelection();
     this.onFeaturesChanged();
   }
@@ -855,7 +871,7 @@ export class StrategistController {
   public undoLast(): void {
     const last = this.features.pop();
     if (!last) return;
-    this.featureRoot.remove(last.group);
+    this.disposeFeatureGroup(last.group);
     if (this.selectedId === last.id) this.clearSelection();
     this.onFeaturesChanged();
   }
@@ -867,7 +883,7 @@ export class StrategistController {
   /** Highlights a feature in-scene (a marker at its first point); pass `null` to clear. */
   public selectFeature(id: string | null): void {
     this.selectedId = id;
-    this.selectionRoot.clear();
+    this.clearRoot(this.selectionRoot);
     if (!id) return;
     const f = this.features.find((f) => f.id === id);
     const firstLocal = f?.planFeature.points.local[0];
@@ -884,7 +900,7 @@ export class StrategistController {
 
   private clearSelection(): void {
     this.selectedId = null;
-    this.selectionRoot.clear();
+    this.clearRoot(this.selectionRoot);
   }
 
   // ---------- picking ----------
@@ -905,6 +921,29 @@ export class StrategistController {
   }
 
   // ---------- camera controls ----------
+
+  private onContextMenu = (e: MouseEvent): void => {
+    if (this.enabled) e.preventDefault();
+  };
+
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if (!this.enabled) return;
+    if (e.key === 'Escape') {
+      if (this.groundWalkController.isActive) this.exitGroundWalk();
+      else this.cancelDraft();
+      return;
+    }
+    const direction = GROUND_WALK_KEY_MAP[e.key];
+    if (direction && this.groundWalkController.isActive) {
+      this.groundWalkController.setMoving(direction, true);
+    }
+  };
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    if (!this.enabled) return;
+    const direction = GROUND_WALK_KEY_MAP[e.key];
+    if (direction) this.groundWalkController.setMoving(direction, false);
+  };
 
   private onDown = (e: PointerEvent): void => {
     if (!this.enabled) return;
@@ -1096,7 +1135,7 @@ export class StrategistController {
           this.viewshed.aim(this.draft[0], this.draft[1]);
           this.onStatus('VIEWSHED locked — green = visible, red = hidden. Clear All to remove.');
           this.draft = [];
-          this.previewRoot.clear();
+          this.clearRoot(this.previewRoot);
         } else {
           this.onStatus('VIEWSHED — sweep the mouse to aim, click to lock');
         }
@@ -1108,7 +1147,7 @@ export class StrategistController {
             `COUNTER-VIEWSHED from ${this.counterViewshedUnitName} locked — green = seen by them, red = hidden from them. Clear All to remove.`
           );
           this.draft = [];
-          this.previewRoot.clear();
+          this.clearRoot(this.previewRoot);
         } else {
           this.onStatus(
             `COUNTER-VIEWSHED from ${this.counterViewshedUnitName} — sweep the mouse to aim, click to lock`
@@ -1153,14 +1192,14 @@ export class StrategistController {
   private cancelDraft(): void {
     this.draft = [];
     this.hover = null;
-    this.previewRoot.clear();
+    this.clearRoot(this.previewRoot);
     this.pendingPhasePosition = null;
     this.counterViewshedUnitName = null;
     this.onStatus(TOOL_HINTS[this.tool]);
   }
 
   private updatePreview(): void {
-    this.previewRoot.clear();
+    this.clearRoot(this.previewRoot);
     if (this.draft.length === 0) return;
 
     const pts = this.hover ? [...this.draft, this.hover] : [...this.draft];
@@ -1206,7 +1245,7 @@ export class StrategistController {
     this.features.push({ id: planFeature.id, planFeature, group });
     this.draft = [];
     this.hover = null;
-    this.previewRoot.clear();
+    this.clearRoot(this.previewRoot);
     this.onFeaturesChanged();
   }
 
@@ -1341,7 +1380,7 @@ export class StrategistController {
     this.groundWalkController.enter(this.camera, groundPoint, this.raycaster, this.tiles);
     this.draft = [];
     this.hover = null;
-    this.previewRoot.clear();
+    this.clearRoot(this.previewRoot);
     this.onStatus(TOOL_HINTS.groundWalk);
   }
 

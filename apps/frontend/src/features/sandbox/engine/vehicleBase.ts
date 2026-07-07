@@ -1,6 +1,6 @@
 import { Group, Object3D, Raycaster, Vector3 } from 'three'
 
-import { SANDBOX_MISC } from '@/constants'
+import { SANDBOX_MISC } from '@/constants/sandbox'
 
 export type VehicleType = 'tank' | 'car' | 'jet' | 'spider'
 

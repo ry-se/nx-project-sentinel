@@ -6,6 +6,7 @@ import { Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene
 
 import { NavBar } from '../../../layouts/NavBar';
 import { BRIEF_TRANSITION_DURATION_MS } from '../../../features/sandbox/engine/briefPlayback';
+import type { ClassificationLevel } from '../../../features/sandbox/engine/classification';
 import type { CameraPose, Sandbox, SandboxCallbacks } from '../../../features/sandbox/engine/createSandbox';
 import { exportGeoJSON, exportKML } from '../../../features/sandbox/engine/exportPlan';
 import { GeoFrame } from '../../../features/sandbox/engine/geoFrame';
@@ -60,7 +61,7 @@ const fakeSandbox: Partial<Sandbox> = {
   listPlans: vi.fn(() => []),
   deletePlan: vi.fn(),
   setClassification: vi.fn(),
-  getClassification: vi.fn(() => 'EXERCISE'),
+  getClassification: vi.fn((): ClassificationLevel => 'EXERCISE'),
   setOperatorName: vi.fn(),
   exportPlanGeoJSON,
   exportPlanKML,
@@ -109,7 +110,7 @@ const fakeSandbox: Partial<Sandbox> = {
   clearRouteExposureOverlay: vi.fn(),
   switchVehicle: vi.fn(),
   setLabelsVisible: vi.fn(),
-  getCameraPose: vi.fn(() => ({
+  getCameraPose: vi.fn((): CameraPose => ({
     type: 'sentinel-camera-pose',
     version: 1,
     capturedAt: '2026-07-05T00:00:00.000Z',
@@ -144,12 +145,6 @@ vi.mock('../../../features/sandbox/engine/createSandbox', async () => {
     ),
   };
 });
-
-async function mountInStrategistMode(): Promise<void> {
-  vi.stubEnv('VITE_GOOGLE_TILES_KEY', 'test-key');
-  render(<WorldView />);
-  await waitFor(() => expect(screen.getByRole('tab', { name: /Tools/ })).toBeInTheDocument());
-}
 
 const noop = (): void => undefined;
 

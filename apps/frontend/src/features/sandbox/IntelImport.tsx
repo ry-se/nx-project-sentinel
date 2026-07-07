@@ -6,11 +6,12 @@ import type {
   DeployResult,
   ImageAnnotation,
 } from './engine/createSandbox';
-import { DETECTION_CLASSES, type DetectionClass } from './engine/detections';
+import { DETECTION_CLASSES, type DetectionClass } from './detectionSchema';
 import { detect, DetectClientError } from './intel/detectClient';
 import { drawOBB } from './intel/renderDetectionBox';
 
-import { CANVAS, SANDBOX_COMMON } from '@/constants';
+import { CANVAS } from '@/constants/canvas';
+import { SANDBOX_COMMON } from '@/constants/sandbox';
 
 type AutoDetectState =
   | { status: 'idle' }
@@ -52,6 +53,7 @@ const CANVAS_MAX_H = 460;
 export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   const [imageName, setImageName] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
@@ -83,11 +85,22 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
 
   // ---------- image loading ----------
 
+  const revokeObjectUrl = useCallback((): void => {
+    if (!objectUrlRef.current) return;
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = null;
+  }, []);
+
+  useEffect(() => revokeObjectUrl, [revokeObjectUrl]);
+
   const onFile = (file: File | undefined): void => {
     if (!file) return;
+    revokeObjectUrl();
     const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
     const img = new Image();
     img.onload = () => {
+      if (objectUrlRef.current !== url) return;
       imageRef.current = img;
       setImageName(file.name);
       setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
@@ -97,6 +110,10 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       setResult(null);
       setLastDetected(null);
       setPendingReview(null);
+      revokeObjectUrl();
+    };
+    img.onerror = () => {
+      if (objectUrlRef.current === url) revokeObjectUrl();
     };
     img.src = url;
   };
@@ -418,8 +435,8 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
             <div className="alert alert-warning text-sm">
               Review required before deploy — model={pendingReview.model} ·{' '}
               {pendingReview.annotations.length} detection
-              {pendingReview.annotations.length === 1 ? '' : 's'} found. Uncheck any you don't want
-              deployed.
+              {pendingReview.annotations.length === 1 ? '' : 's'} found. Uncheck any you
+              don&apos;t want deployed.
             </div>
             <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
               {pendingReview.annotations.map((a, i) => (

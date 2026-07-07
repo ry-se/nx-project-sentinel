@@ -19,7 +19,7 @@ import {
 import { Vehicle, type VehicleState } from './vehicleBase'
 import type { ModelLibrary } from './modelCatalog'
 
-import { SANDBOX_COMMON, SPIDER } from '@/constants'
+import { SANDBOX_COMMON, SPIDER } from '@/constants/sandbox'
 
 const {
   G_RISE,

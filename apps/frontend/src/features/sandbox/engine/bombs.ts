@@ -14,8 +14,10 @@ import {
 } from 'three'
 
 import type { BombDrop } from './vehicles'
+import { disposeObject3D } from './disposeThree'
 
-import { BOMB, SANDBOX_BOMB } from '@/constants'
+import { BOMB } from '@/constants/engine'
+import { SANDBOX_BOMB } from '@/constants/sandbox'
 
 // const BOMB.GRAVITY = -28          // m/s²
 // const BOMB.BLAST_RADIUS = 120     // metres for debris scatter
@@ -336,7 +338,7 @@ function createExplosion(pos: Vector3, terrain: Object3D, scene: Scene): Explosi
   }
 }
 
-function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
+function tickExplosion(e: ExplosionState, dt: number): void {
   e.age += dt
 
   // --- flash ---
@@ -346,7 +348,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
     e.flash.scale.setScalar(r)
     ;(e.flash.material as MeshStandardMaterial).opacity = 1 - t
   } else if (e.flash.parent) {
-    scene.remove(e.flash)
+    disposeObject3D(e.flash)
   }
 
   // --- fireball ---
@@ -366,7 +368,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
       SANDBOX_BOMB.FIREBALL_LIGHTNESS_BASE - t * SANDBOX_BOMB.FIREBALL_LIGHTNESS_SHIFT,
     )
   } else if (e.fireball.parent) {
-    scene.remove(e.fireball)
+    disposeObject3D(e.fireball)
   }
 
   // --- smoke ---
@@ -379,7 +381,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
       : SANDBOX_BOMB.SMOKE_OPACITY *
         (1 - (t - SANDBOX_BOMB.SMOKE_FADE_IN) / SANDBOX_BOMB.SMOKE_FADE_OUT_RANGE)
   } else if (e.smoke.parent) {
-    scene.remove(e.smoke)
+    disposeObject3D(e.smoke)
   }
 
   // --- shockwave ring ---
@@ -388,7 +390,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
     e.shockwave.scale.setScalar(1 + t * SANDBOX_BOMB.SHOCK_GROWTH)
     ;(e.shockwave.material as MeshStandardMaterial).opacity = SANDBOX_BOMB.SHOCK_OPACITY * (1 - t)
   } else if (e.shockwave.parent) {
-    scene.remove(e.shockwave)
+    disposeObject3D(e.shockwave)
   }
 
   // --- secondary fires ---
@@ -404,7 +406,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
       t < SANDBOX_BOMB.FIRE_FADE_START
         ? 1
         : Math.max(0, 1 - (t - SANDBOX_BOMB.FIRE_FADE_START) / SANDBOX_BOMB.FIRE_FADE_RANGE)
-    if (t >= SANDBOX_BOMB.FIRE_REMOVE_T) scene.remove(f)
+    if (t >= SANDBOX_BOMB.FIRE_REMOVE_T) disposeObject3D(f)
   }
 
   // --- debris ---
@@ -420,7 +422,7 @@ function tickExplosion(e: ExplosionState, dt: number, scene: Scene): void {
     d.vel.z *= SANDBOX_BOMB.DEBRIS_DAMPING
     const lifeT = d.age / d.life
     ;(d.mesh.material as MeshStandardMaterial).opacity = Math.max(0, 1 - lifeT * lifeT)
-    if (d.age >= d.life) scene.remove(d.mesh)
+    if (d.age >= d.life) disposeObject3D(d.mesh)
   }
 
   // done when smoke is gone
@@ -435,6 +437,7 @@ export class BombManager {
   private scene: Scene
   private active: FallingBomb[] = []
   private explosions: ExplosionState[] = []
+  private craters: Mesh[] = []
   private rc = new Raycaster()
 
   constructor(scene: Scene) {
@@ -472,10 +475,12 @@ export class BombManager {
       const hits = this.rc.intersectObject(terrain, true)
       if (hits.length > 0) {
         const pt = hits[0].point
-        this.scene.remove(b.group)
+        disposeObject3D(b.group)
         b.alive = false
         deformTiles(pt, terrain)
-        this.explosions.push(createExplosion(pt, terrain, this.scene))
+        const explosion = createExplosion(pt, terrain, this.scene)
+        this.explosions.push(explosion)
+        this.craters.push(explosion.crater)
         shake = Math.max(shake, SANDBOX_BOMB.IMPACT_SHAKE)
       }
     }
@@ -483,7 +488,7 @@ export class BombManager {
 
     // explosion VFX tick
     for (const e of this.explosions) {
-      if (e.alive) tickExplosion(e, dt, this.scene)
+      if (e.alive) tickExplosion(e, dt)
     }
     this.explosions = this.explosions.filter(e => e.alive)
 
@@ -491,8 +496,22 @@ export class BombManager {
   }
 
   public dispose(): void {
-    for (const b of this.active) this.scene.remove(b.group)
+    for (const b of this.active) disposeObject3D(b.group)
     this.active = []
-    // craters and remaining meshes left in scene intentionally
+    for (const explosion of this.explosions) disposeExplosion(explosion, false)
+    this.explosions = []
+    for (const crater of this.craters) disposeObject3D(crater)
+    this.craters = []
   }
+}
+
+function disposeExplosion(explosion: ExplosionState, includeCrater = true): void {
+  disposeObject3D(explosion.flash)
+  disposeObject3D(explosion.fireball)
+  disposeObject3D(explosion.smoke)
+  disposeObject3D(explosion.shockwave)
+  for (const fire of explosion.fires) disposeObject3D(fire)
+  for (const debris of explosion.debris) disposeObject3D(debris.mesh)
+  if (includeCrater) disposeObject3D(explosion.crater)
+  explosion.alive = false
 }

@@ -25,6 +25,8 @@ import {
   SphereRegion,
 } from '3d-tiles-renderer/plugins';
 
+import type { DetectionClass } from '../detectionSchema';
+
 import type { ElevationSample, MoveRate } from './elevationProfile';
 import { type FeatureSummary, StrategistController, type StratTool } from './strategist';
 import type { Affiliation, Echelon } from './unitSymbol';
@@ -47,9 +49,9 @@ import { VehicleManager, type VehicleType } from './vehicles';
 import { BombManager } from './bombs';
 import { GeoFrame } from './geoFrame';
 import { ModelLibrary } from './modelCatalog';
-import { type DetectionClass, DetectionLayer, type SentinelDetection } from './detections';
+import { DetectionLayer, type SentinelDetection } from './detections';
 
-import { SANDBOX_COMMON, SANDBOX_ENGINE } from '@/constants';
+import { SANDBOX_COMMON, SANDBOX_ENGINE } from '@/constants/sandbox';
 
 export interface SandboxAnchor {
   lat: number;
@@ -527,17 +529,19 @@ export function createSandbox(
   const detectionLayer = new DetectionLayer(scene, modelLibrary);
 
   let tilesLoaded = false;
-  tiles.addEventListener('load-tile-set', () => {
+  const onLoadTileSet = (): void => {
     if (!tilesLoaded) {
       tilesLoaded = true;
       cb.onTilesLoaded();
       void labels.load(anchor.lat, anchor.lon);
     }
-  });
-  tiles.addEventListener('load-error', (e: { error?: Error; url?: string | URL }) => {
+  };
+  const onLoadError = (e: { error?: Error; url?: string | URL }): void => {
     console.error('[sandbox] tile load error at', e?.url, e?.error);
     if (!tilesLoaded) cb.onError(`Tile load error: ${e?.error?.message ?? 'unknown'}`);
-  });
+  };
+  tiles.addEventListener('load-tile-set', onLoadTileSet);
+  tiles.addEventListener('load-error', onLoadError);
 
   // --- Vehicles + ordnance ---
   const projectiles = new ProjectileManager(scene, tiles.group);
@@ -1017,6 +1021,17 @@ export function createSandbox(
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
+      tiles.removeEventListener('load-tile-set', onLoadTileSet);
+      tiles.removeEventListener('load-error', onLoadError);
+      strategist.dispose();
+      viewshed.dispose();
+      vehicles.dispose();
+      projectiles.dispose();
+      bombs.dispose();
+      detectionLayer.dispose();
+      labels.dispose();
+      modelLibrary.dispose();
+      draco.dispose();
       tiles.dispose();
       renderer.dispose();
     },

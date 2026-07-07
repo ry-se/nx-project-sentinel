@@ -1,8 +1,20 @@
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three';
+import {
+  Box3,
+  type BufferGeometry,
+  Color,
+  Group,
+  type Material,
+  Mesh,
+  MeshStandardMaterial,
+  type Texture,
+  Vector3,
+} from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
-import { SANDBOX_MISC } from '@/constants';
+import { disposeObject3D, isObject3DDisposed } from './disposeThree';
+
+import { SANDBOX_MISC } from '@/constants/sandbox';
 
 /**
  * Central model catalogue. Drop a .glb into apps/frontend/public/models/ and
@@ -29,16 +41,19 @@ export const MODEL_CATALOG: Record<string, ModelDef> = {
 
 export class ModelLibrary {
   private loader: GLTFLoader;
+  private draco: DRACOLoader;
   private cache = new Map<string, Promise<Group | null>>();
+  private disposed = false;
 
   constructor() {
     this.loader = new GLTFLoader();
-    const draco = new DRACOLoader();
-    draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
-    this.loader.setDRACOLoader(draco);
+    this.draco = new DRACOLoader();
+    this.draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+    this.loader.setDRACOLoader(this.draco);
   }
 
   private load(id: string, def: ModelDef): Promise<Group | null> {
+    if (this.disposed) return Promise.resolve(null);
     let pending = this.cache.get(id);
     if (!pending) {
       pending = this.loader
@@ -63,18 +78,66 @@ export class ModelLibrary {
     holder.add(fb);
 
     const def = MODEL_CATALOG[id];
-    if (def) {
+    if (def && !this.disposed) {
       void this.load(id, def).then((model) => {
-        if (!model) return;
-        const clone = model.clone(true);
+        if (this.disposed || !model || !holder.parent || isObject3DDisposed(holder)) return;
+        const clone = cloneOwnedModel(model);
         if (tintHex !== undefined) tint(clone, tintHex);
         clone.traverse((o) => o.layers.set(1));
-        holder.remove(fb);
+        if (this.disposed || !holder.parent || isObject3DDisposed(holder)) {
+          disposeObject3D(clone);
+          return;
+        }
+        disposeObject3D(fb);
         holder.add(clone);
       });
     }
     return holder;
   }
+
+  public dispose(): void {
+    this.disposed = true;
+    for (const pending of this.cache.values()) {
+      void pending.then((model) => {
+        if (model) disposeObject3D(model);
+      });
+    }
+    this.cache.clear();
+    this.draco.dispose();
+  }
+}
+
+function cloneOwnedModel(model: Group): Group {
+  const clone = model.clone(true);
+  clone.traverse((obj) => {
+    const mesh = obj as Mesh & { geometry?: BufferGeometry; material?: Material | Material[] };
+    if (!mesh.isMesh) return;
+    if (mesh.geometry) mesh.geometry = mesh.geometry.clone();
+    if (Array.isArray(mesh.material)) {
+      mesh.material = mesh.material.map((material) => cloneOwnedMaterial(material));
+    } else if (mesh.material) {
+      mesh.material = cloneOwnedMaterial(mesh.material);
+    }
+  });
+  return clone;
+}
+
+function isTexture(value: unknown): value is Texture {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { isTexture?: boolean }).isTexture === true
+  );
+}
+
+function cloneOwnedMaterial<T extends Material>(material: T): T {
+  const cloned = material.clone();
+  for (const [key, value] of Object.entries(cloned as unknown as Record<string, unknown>)) {
+    if (isTexture(value)) {
+      (cloned as unknown as Record<string, unknown>)[key] = value.clone();
+    }
+  }
+  return cloned as T;
 }
 
 /** Face +Z, bottom at y = 0, centred in XZ, scaled to targetLength. */
@@ -106,13 +169,10 @@ function tint(root: Group, hex: number): void {
   root.traverse((obj) => {
     const mesh = obj as Mesh;
     if (!mesh.isMesh) return;
-    const wasArray = Array.isArray(mesh.material);
-    const materials = wasArray ? (mesh.material as MeshStandardMaterial[]) : [mesh.material as MeshStandardMaterial];
-    const tinted = materials.map((m) => {
-      const cloned = m.clone();
-      if (cloned.color) cloned.color.lerp(target, SANDBOX_MISC.MODEL_TINT_BLEND);
-      return cloned;
-    });
-    mesh.material = wasArray ? tinted : tinted[0];
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const standardMaterial = material as MeshStandardMaterial;
+      if (standardMaterial.color) standardMaterial.color.lerp(target, SANDBOX_MISC.MODEL_TINT_BLEND);
+    }
   });
 }

@@ -2,7 +2,7 @@ import { forward } from 'mgrs';
 
 import type { GeoPosition } from './geoFrame';
 
-import { SANDBOX_MISC } from '@/constants';
+import { SANDBOX_MISC } from '@/constants/sandbox';
 
 /** Converts a geo position to an MGRS grid-reference string via the `mgrs` library
  * (rules/dependencies.md — no hand-rolled ellipsoidal grid math). `accuracy` follows the

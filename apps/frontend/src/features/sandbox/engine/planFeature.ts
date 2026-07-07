@@ -27,7 +27,7 @@ import type { GeoFrame, GeoPosition } from './geoFrame';
 import { buildUnitSymbolGroup, readUnitMetadata } from './unitSymbol';
 import { type SystemId, WEAPON_SYSTEMS } from './weaponSystems';
 
-import { SANDBOX_COMMON, SANDBOX_PLAN_FEATURE } from '@/constants';
+import { SANDBOX_COMMON, SANDBOX_PLAN_FEATURE } from '@/constants/sandbox';
 
 /** A JSON-safe stand-in for a Three.js `Vector3` — the shape every `PlanFeature` persists. */
 export interface LocalPoint {

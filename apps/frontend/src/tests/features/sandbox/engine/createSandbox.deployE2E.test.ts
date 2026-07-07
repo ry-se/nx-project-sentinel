@@ -1,5 +1,4 @@
 import { TilesRenderer } from '3d-tiles-renderer';
-import { OBJECT_FRAME } from '3d-tiles-renderer/three';
 import { Group, MathUtils, Mesh, MeshBasicMaterial, PlaneGeometry, Scene } from 'three';
 
 import { type CameraPose, deployAnnotations, type ImageAnnotation } from '../../../../features/sandbox/engine/createSandbox';
@@ -50,8 +49,7 @@ function setupTilesAtAnchor(anchor: { lat: number; lon: number }): TilesRenderer
     0,
     0,
     0,
-    tiles.group.matrix,
-    OBJECT_FRAME
+    tiles.group.matrix
   );
   tiles.group.matrix
     .invert()

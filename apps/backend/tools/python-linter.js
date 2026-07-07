@@ -10,7 +10,11 @@ const { spawnSync } = require("child_process");
 const result = spawnSync(
   python,
   ["-m", "ruff", "check", "."],
-  { stdio: "inherit", cwd: "apps/backend" }
+  { stdio: "inherit" }
 );
 
-process.exit(result.status);
+if (result.error) {
+  console.error(result.error.message);
+}
+
+process.exit(result.status ?? 1);

@@ -1,7 +1,7 @@
 import { MathUtils, Matrix4, Vector3 } from 'three';
 import type { TilesRenderer } from '3d-tiles-renderer';
 
-import { SANDBOX_COMMON } from '@/constants';
+import { SANDBOX_COMMON } from '@/constants/sandbox';
 
 export interface GeoPosition {
   lat: number;

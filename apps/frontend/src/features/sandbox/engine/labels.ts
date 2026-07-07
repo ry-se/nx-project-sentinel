@@ -4,9 +4,12 @@ import {
 } from 'three'
 import type { TilesRenderer } from '3d-tiles-renderer'
 
-import { SANDBOX_MISC } from '@/constants'
+import { disposeObject3D } from './disposeThree'
 
-const CACHE_KEY = 'osm_labels_cache_v1'
+import { SANDBOX_MISC } from '@/constants/sandbox'
+
+const CACHE_PREFIX = 'osm_labels_cache_v1'
+const CACHE_COORD_PRECISION = 4
 const MAX_LABELS = SANDBOX_MISC.LABEL_MAX_LABELS
 const VISIBLE_RANGE = SANDBOX_MISC.LABEL_VISIBLE_RANGE_M   // hide labels beyond this camera distance (m)
 const LABEL_LIFT = SANDBOX_MISC.LABEL_LIFT_M        // metres above the mesh surface
@@ -42,6 +45,7 @@ export class LabelManager {
   private unclamped: Sprite[] = []
   private lastClampAt = 0
   private loaded = false
+  private disposed = false
 
   constructor(scene: Scene, tiles: TilesRenderer) {
     this.tiles = tiles
@@ -53,7 +57,7 @@ export class LabelManager {
   /** Fetch POIs and build sprites. Call once the root tileset has loaded
    *  (the reorientation transform must be in place). */
   public async load(centerLat: number, centerLon: number): Promise<void> {
-    if (this.loaded) return
+    if (this.loaded || this.disposed) return
     this.loaded = true
 
     let pois: POI[]
@@ -63,9 +67,11 @@ export class LabelManager {
       console.warn('[labels] OSM fetch failed:', e)
       return
     }
+    if (this.disposed) return
 
     this.tiles.group.updateMatrixWorld(true)
     for (const poi of pois) {
+      if (this.disposed) return
       const pos = new Vector3()
       this.tiles.ellipsoid.getCartographicToPosition(
         MathUtils.DEG2RAD * poi.lat,
@@ -83,11 +89,11 @@ export class LabelManager {
       this.root.add(sprite)
       this.unclamped.push(sprite)
     }
-    console.log(`[labels] placed ${pois.length} OSM labels`)
   }
 
   /** Per-frame: distance culling + lazy height clamping as tiles stream in. */
   public update(camera: PerspectiveCamera): void {
+    if (this.disposed) return
     if (!this.visible) return
 
     const now = performance.now()
@@ -118,15 +124,20 @@ export class LabelManager {
     this.visible = v
     this.root.visible = v
   }
+
+  public dispose(): void {
+    this.disposed = true
+    this.unclamped = []
+    disposeObject3D(this.root)
+  }
 }
 
 // ---------- OSM fetch ----------
 
 async function fetchPOIs(lat: number, lon: number): Promise<POI[]> {
-  const cached = localStorage.getItem(CACHE_KEY)
-  if (cached) {
-    try { return JSON.parse(cached) as POI[] } catch { localStorage.removeItem(CACHE_KEY) }
-  }
+  const cacheKey = poiCacheKey(lat, lon)
+  const cached = readCachedPOIs(cacheKey)
+  if (cached) return cached
 
   const d = SANDBOX_MISC.LABEL_BBOX_HALF_EXTENT_DEG // ≈ 1.5 km half-extent
   const bbox = `${lat - d},${lon - d},${lat + d},${lon + d}`
@@ -167,7 +178,8 @@ async function fetchPOIs(lat: number, lon: number): Promise<POI[]> {
     if (!name || plat === undefined || plon === undefined || seen.has(name)) continue
     seen.add(name)
 
-    const tags = el.tags!
+    const tags = el.tags
+    if (!tags) continue
     let kind = 'amenity'
     let priority = 4
     if (tags.place) { kind = 'place'; priority = 0 }
@@ -181,15 +193,39 @@ async function fetchPOIs(lat: number, lon: number): Promise<POI[]> {
 
   pois.sort((a, b) => a.priority - b.priority)
   const top = pois.slice(0, MAX_LABELS)
-  localStorage.setItem(CACHE_KEY, JSON.stringify(top))
+  writeCachedPOIs(cacheKey, top)
   return top
+}
+
+function poiCacheKey(lat: number, lon: number): string {
+  return `${CACHE_PREFIX}:${lat.toFixed(CACHE_COORD_PRECISION)}:${lon.toFixed(CACHE_COORD_PRECISION)}`
+}
+
+function readCachedPOIs(cacheKey: string): POI[] | null {
+  try {
+    const cached = localStorage.getItem(cacheKey)
+    if (!cached) return null
+    return JSON.parse(cached) as POI[]
+  } catch {
+    try { localStorage.removeItem(cacheKey) } catch { /* storage may be unavailable */ }
+    return null
+  }
+}
+
+function writeCachedPOIs(cacheKey: string, pois: POI[]): void {
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify(pois))
+  } catch {
+    // Label caching is opportunistic; rendering can continue without storage.
+  }
 }
 
 // ---------- sprite ----------
 
 function makeLabelSprite(text: string): Sprite {
   const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
   ctx.font = `600 ${SANDBOX_MISC.LABEL_FONT_SIZE}px system-ui, sans-serif`
   const w = Math.min(
     Math.ceil(ctx.measureText(text).width) + SANDBOX_MISC.LABEL_PADDING_X,
@@ -198,15 +234,14 @@ function makeLabelSprite(text: string): Sprite {
   canvas.width = w
   canvas.height = SANDBOX_MISC.LABEL_CANVAS_HEIGHT
 
-  const c = canvas.getContext('2d')!
-  c.font = `600 ${SANDBOX_MISC.LABEL_FONT_SIZE}px system-ui, sans-serif`
-  c.textBaseline = 'middle'
-  c.lineWidth = SANDBOX_MISC.LABEL_STROKE_WIDTH
-  c.lineJoin = 'round'
-  c.strokeStyle = 'rgba(10,14,18,0.95)'
-  c.fillStyle = '#ffffff'
-  c.strokeText(text, SANDBOX_MISC.LABEL_MARGIN_X, SANDBOX_MISC.LABEL_TEXT_Y)
-  c.fillText(text, SANDBOX_MISC.LABEL_MARGIN_X, SANDBOX_MISC.LABEL_TEXT_Y)
+  ctx.font = `600 ${SANDBOX_MISC.LABEL_FONT_SIZE}px system-ui, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = SANDBOX_MISC.LABEL_STROKE_WIDTH
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = 'rgba(10,14,18,0.95)'
+  ctx.fillStyle = '#ffffff'
+  ctx.strokeText(text, SANDBOX_MISC.LABEL_MARGIN_X, SANDBOX_MISC.LABEL_TEXT_Y)
+  ctx.fillText(text, SANDBOX_MISC.LABEL_MARGIN_X, SANDBOX_MISC.LABEL_TEXT_Y)
 
   const sprite = new Sprite(new SpriteMaterial({
     map: new CanvasTexture(canvas),

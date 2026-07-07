@@ -46,17 +46,77 @@ function storageKey(id: string): string {
   return `${STORAGE_PREFIX}${id}`;
 }
 
+function getPlanStorage(): Storage | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    // Touching length catches browsers that expose localStorage but deny access.
+    void localStorage.length;
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function requirePlanStorage(): Storage {
+  const storage = getPlanStorage();
+  if (!storage) throw new Error('Plan storage is unavailable in this browser context');
+  return storage;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseStoredPlan(raw: string): Plan {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed)) throw new Error('Invalid saved plan record');
+  const foundVersion = parsed.version;
+  if (foundVersion !== PLAN_SCHEMA_VERSION) {
+    throw new UnknownPlanSchemaVersionError(
+      typeof foundVersion === 'number' ? foundVersion : Number.NaN
+    );
+  }
+  if (
+    typeof parsed.id !== 'string' ||
+    typeof parsed.name !== 'string' ||
+    typeof parsed.createdAt !== 'string' ||
+    typeof parsed.updatedAt !== 'string' ||
+    !isRecord(parsed.anchor) ||
+    !Array.isArray(parsed.features)
+  ) {
+    throw new Error('Invalid saved plan record');
+  }
+
+  return {
+    ...(parsed as unknown as Plan),
+    viewpoints: Array.isArray(parsed.viewpoints) ? (parsed.viewpoints as Viewpoint[]) : [],
+    classification:
+      typeof parsed.classification === 'string'
+        ? (parsed.classification as ClassificationLevel)
+        : DEFAULT_CLASSIFICATION,
+    phases: Array.isArray(parsed.phases) ? (parsed.phases as PlanPhase[]) : [],
+  };
+}
+
 function readAllPlans(): Plan[] {
+  const storage = getPlanStorage();
+  if (!storage) return [];
   const plans: Plan[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith(STORAGE_PREFIX)) continue;
-    const raw = localStorage.getItem(key);
-    if (!raw) continue;
+  let length = 0;
+  try {
+    length = storage.length;
+  } catch {
+    return [];
+  }
+  for (let i = 0; i < length; i++) {
     try {
-      plans.push(JSON.parse(raw) as Plan);
+      const key = storage.key(i);
+      if (!key?.startsWith(STORAGE_PREFIX)) continue;
+      const raw = storage.getItem(key);
+      if (!raw) continue;
+      plans.push(parseStoredPlan(raw));
     } catch {
-      continue; // a corrupted/foreign entry under our prefix — skip, don't crash listPlans()
+      continue; // unavailable/corrupted/foreign entry — skip, don't crash listPlans()
     }
   }
   return plans;
@@ -77,6 +137,7 @@ export function savePlan(
   phases: PlanPhase[] = []
 ): Plan {
   const existing = readAllPlans().find((p) => p.name === name);
+  const storage = requirePlanStorage();
   const plan: Plan = {
     id: existing?.id ?? crypto.randomUUID(),
     name,
@@ -89,7 +150,7 @@ export function savePlan(
     classification,
     phases,
   };
-  localStorage.setItem(storageKey(plan.id), JSON.stringify(plan));
+  storage.setItem(storageKey(plan.id), JSON.stringify(plan));
   return plan;
 }
 
@@ -98,11 +159,10 @@ export function savePlan(
  * `UnknownPlanSchemaVersionError` on a version mismatch — fails loud, never silently
  * misreads an incompatible format (invariant 3). */
 export function loadPlan(id: string): Plan {
-  const raw = localStorage.getItem(storageKey(id));
+  const storage = requirePlanStorage();
+  const raw = storage.getItem(storageKey(id));
   if (!raw) throw new Error(`No saved plan with id "${id}"`);
-  const plan = JSON.parse(raw) as Plan;
-  if (plan.version !== PLAN_SCHEMA_VERSION) throw new UnknownPlanSchemaVersionError(plan.version);
-  return plan;
+  return parseStoredPlan(raw);
 }
 
 /** Lists every saved plan, most recently updated first. */
@@ -111,5 +171,11 @@ export function listPlans(): Plan[] {
 }
 
 export function deletePlan(id: string): void {
-  localStorage.removeItem(storageKey(id));
+  const storage = getPlanStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(storageKey(id));
+  } catch {
+    // Storage can become unavailable after the initial probe; deleting should stay best-effort.
+  }
 }
