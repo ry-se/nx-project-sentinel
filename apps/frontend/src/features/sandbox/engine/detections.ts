@@ -1,3 +1,4 @@
+import type { UnitType, Vec3 } from '@org/simulation-core';
 import {
   BoxGeometry,
   CanvasTexture,
@@ -45,8 +46,26 @@ export interface SentinelDetection {
   uncertainty_m?: number;
 }
 
+/** A geolocated intel contact ready to be handed to the battle layer without leaking
+ * Three.js vectors across the integration boundary. */
+export interface ProjectedIntelContact {
+  readonly detection: SentinelDetection;
+  readonly worldPosition: Vec3;
+  readonly localHeadingRad?: number;
+}
+
+/** Exhaustive intel-class -> battle-unit bridge. `satisfies` makes a newly-added
+ * DetectionClass a compile error here rather than silently falling through. */
+export const DETECTION_CLASS_TO_BATTLE_UNIT = {
+  armored_fighting_vehicle: 'tank',
+  light_military_vehicle: 'car',
+  aircraft: 'jet',
+} as const satisfies Readonly<Record<DetectionClass, UnitType>>;
+
 const HOSTILE_RED = SANDBOX_DETECTIONS.HOSTILE_RED;
 const HOSTILE_DARK = SANDBOX_DETECTIONS.HOSTILE_DARK;
+const BATTLE_LINKED_RING_OPACITY_MULTIPLIER = 0.35;
+const BATTLE_LINKED_TAG_OPACITY = 0.62;
 
 /** Maps detection confidence [0,1] to ring opacity so low-confidence detections render
  * visibly fainter than high-confidence ones. 1.0 confidence -> 0.7 opacity, matching the
@@ -59,16 +78,19 @@ export function confidenceToRingOpacity(confidence: number): number {
   );
 }
 
-const CLASS_TO_ASSET: Record<DetectionClass, string> = {
-  armored_fighting_vehicle: 'tank',
-  light_military_vehicle: 'car',
-  aircraft: 'jet',
-};
+interface DetectionRenderEntry {
+  readonly group: Group;
+  readonly model: Group;
+  readonly ring: Mesh<RingGeometry, MeshStandardMaterial>;
+  readonly tag: Sprite;
+  readonly baseRingOpacity: number;
+}
 
 /** Renders deployed detections as red hostile models with rings + labels. */
 export class DetectionLayer {
-  private root = new Group();
-  private lib: ModelLibrary;
+  private readonly root = new Group();
+  private readonly lib: ModelLibrary;
+  private readonly rendersByDetectionId = new Map<string, DetectionRenderEntry>();
 
   constructor(scene: Scene, lib: ModelLibrary) {
     this.lib = lib;
@@ -80,11 +102,20 @@ export class DetectionLayer {
     localYaw: number,
     cls: DetectionClass,
     name: string,
-    opts?: { confidence?: number; uncertaintyM?: number }
+    opts?: { confidence?: number; uncertaintyM?: number; detectionId?: string }
   ): void {
-    const group = new Group();
-    group.add(this.lib.instance(CLASS_TO_ASSET[cls], () => buildModel(cls), HOSTILE_RED));
+    const detectionId = opts?.detectionId;
+    if (detectionId !== undefined) this.removeRegisteredDetection(detectionId);
 
+    const group = new Group();
+    const model = this.lib.instance(
+      DETECTION_CLASS_TO_BATTLE_UNIT[cls],
+      () => buildModel(cls),
+      HOSTILE_RED
+    );
+    group.add(model);
+
+    const baseRingOpacity = confidenceToRingOpacity(opts?.confidence ?? 1.0);
     const ring = new Mesh(
       new RingGeometry(
         SANDBOX_DETECTIONS.RING_INNER_RADIUS,
@@ -94,7 +125,7 @@ export class DetectionLayer {
       new MeshStandardMaterial({
         color: SANDBOX_DETECTIONS.RING_COLOR,
         transparent: true,
-        opacity: confidenceToRingOpacity(opts?.confidence ?? 1.0),
+        opacity: baseRingOpacity,
       })
     );
     ring.rotation.x = -Math.PI / 2;
@@ -102,24 +133,63 @@ export class DetectionLayer {
     group.add(ring);
 
     const label = opts?.uncertaintyM !== undefined ? `${name} ±${opts.uncertaintyM}m` : name;
-    group.add(makeTag(label));
+    const tag = makeTag(label);
+    group.add(tag);
 
     group.position.copy(localPos);
     group.rotation.y = localYaw;
     group.traverse((o) => o.layers.set(SANDBOX_DETECTIONS.MODEL_LAYER));
     this.root.add(group);
+
+    if (detectionId !== undefined) {
+      group.name = `sentinel-detection-${detectionId}`;
+      model.name = `sentinel-detection-model-${detectionId}`;
+      group.userData.detectionId = detectionId;
+      group.userData.battleLinked = false;
+      this.rendersByDetectionId.set(detectionId, {
+        group,
+        model,
+        ring,
+        tag,
+        baseRingOpacity,
+      });
+    }
+  }
+
+  /** Hides only the duplicated vehicle model for battle-linked contacts. The subdued
+   * ring and tag remain as the original intel/provenance cue. Unknown ids are ignored. */
+  public setBattleLinked(ids: readonly string[], linked: boolean): void {
+    for (const id of ids) {
+      const entry = this.rendersByDetectionId.get(id);
+      if (!entry) continue;
+      entry.model.visible = !linked;
+      entry.ring.material.opacity = linked
+        ? entry.baseRingOpacity * BATTLE_LINKED_RING_OPACITY_MULTIPLIER
+        : entry.baseRingOpacity;
+      entry.tag.material.opacity = linked ? BATTLE_LINKED_TAG_OPACITY : 1;
+      entry.group.userData.battleLinked = linked;
+    }
   }
 
   public clear(): void {
+    this.rendersByDetectionId.clear();
     disposeObjectChildren(this.root);
   }
 
   public dispose(): void {
+    this.rendersByDetectionId.clear();
     disposeObject3D(this.root);
   }
 
   public get count(): number {
     return this.root.children.length;
+  }
+
+  private removeRegisteredDetection(detectionId: string): void {
+    const existing = this.rendersByDetectionId.get(detectionId);
+    if (!existing) return;
+    this.rendersByDetectionId.delete(detectionId);
+    disposeObject3D(existing.group);
   }
 }
 

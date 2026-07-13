@@ -1,3 +1,4 @@
+import type { BattleSnapshot, UnitType } from '@org/simulation-core';
 import {
   AmbientLight,
   Clock,
@@ -49,7 +50,16 @@ import { VehicleManager, type VehicleType } from './vehicles';
 import { BombManager } from './bombs';
 import { GeoFrame } from './geoFrame';
 import { ModelLibrary } from './modelCatalog';
-import { DetectionLayer, type SentinelDetection } from './detections';
+import { DetectionLayer, type ProjectedIntelContact, type SentinelDetection } from './detections';
+import {
+  type BattleIntelAssignment,
+  type BattleIntelImportResult,
+  type BattlePlacementResult,
+  type BattleScenarioId,
+  BattleSimulationController,
+  type BattleTeamId,
+} from './battleSimulation';
+import { TerrainSemanticIndex, type TerrainSemanticsSummary } from './terrainSemantics';
 
 import { SANDBOX_COMMON, SANDBOX_ENGINE } from '@/constants/sandbox';
 
@@ -96,6 +106,7 @@ export interface ImageAnnotation {
 
 export interface DeployResult {
   detections: SentinelDetection[];
+  projectedContacts: readonly ProjectedIntelContact[];
   placed: number;
   failed: number;
 }
@@ -206,6 +217,27 @@ export interface Sandbox {
     provenance?: DeployProvenance
   ): DeployResult;
   clearDetections(): void;
+  startBattleScenario(id: BattleScenarioId): BattleSnapshot;
+  setBattlePaused(paused: boolean): BattleSnapshot | null;
+  setBattleTimeScale(scale: number): void;
+  getBattleTimeScale(): number;
+  restartBattle(): BattleSnapshot | null;
+  stopBattle(): void;
+  getBattleSnapshot(): BattleSnapshot | null;
+  placeBattleUnit(
+    scenarioId: BattleScenarioId,
+    teamId: BattleTeamId,
+    unitType: UnitType,
+    clientX: number,
+    clientY: number
+  ): BattlePlacementResult;
+  addIntelToBattle(
+    scenarioId: BattleScenarioId,
+    assignment: BattleIntelAssignment,
+    contacts: readonly ProjectedIntelContact[]
+  ): BattleIntelImportResult;
+  getBattleTerrainSummary(): TerrainSemanticsSummary;
+  retryBattleTerrain(): Promise<TerrainSemanticsSummary>;
   dispose(): void;
 }
 
@@ -216,6 +248,21 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.download = filename;
   a.click();
   window.setTimeout(() => URL.revokeObjectURL(url), SANDBOX_ENGINE.BLOB_URL_REVOKE_MS);
+}
+
+/** Renders one clean tiles-only frame and restores overlay visibility synchronously. */
+export function renderTilesOnlyFrame(
+  renderer: Pick<WebGLRenderer, 'render'>,
+  scene: Scene,
+  camera: PerspectiveCamera
+): void {
+  const previousMask = camera.layers.mask;
+  camera.layers.set(0);
+  try {
+    renderer.render(scene, camera);
+  } finally {
+    camera.layers.mask = previousMask;
+  }
 }
 
 /** Wrap an angle delta into [-π, π] so the camera eases the short way round. */
@@ -284,7 +331,10 @@ export function estimateGeoUncertaintyM(
   const obliquity = 1 / Math.max(Math.abs(rayDirY), SANDBOX_ENGINE.UNCERTAINTY_MIN_RAY_DIR_Y);
   return (
     Math.round(
-      metersPerPixel * ASSUMED_PIXEL_ERROR_PX * obliquity * SANDBOX_ENGINE.PIXEL_ERROR_ROUNDING_SCALE
+      metersPerPixel *
+        ASSUMED_PIXEL_ERROR_PX *
+        obliquity *
+        SANDBOX_ENGINE.PIXEL_ERROR_ROUNDING_SCALE
     ) / SANDBOX_ENGINE.PIXEL_ERROR_ROUNDING_SCALE
   );
 }
@@ -338,6 +388,7 @@ export function deployAnnotations(
 
   const imageId = crypto.randomUUID();
   const detections: SentinelDetection[] = [];
+  const projectedContacts: ProjectedIntelContact[] = [];
   let placed = 0;
   let failed = 0;
 
@@ -353,11 +404,16 @@ export function deployAnnotations(
     const rearPt = castPixel(ann.rear[0], ann.rear[1]);
 
     let headingVec = new Vector3(0, 0, 1);
+    let localHeadingRad: number | undefined;
     if (frontPt && rearPt) {
       headingVec = frontPt.clone().sub(rearPt);
       headingVec.y = 0;
-      if (headingVec.lengthSq() < SANDBOX_ENGINE.HEADING_EPSILON) headingVec.set(0, 0, 1);
-      headingVec.normalize();
+      if (headingVec.lengthSq() < SANDBOX_ENGINE.HEADING_EPSILON) {
+        headingVec.set(0, 0, 1);
+      } else {
+        headingVec.normalize();
+        localHeadingRad = Math.atan2(headingVec.x, headingVec.z);
+      }
     }
 
     const geo = geoFrame.localToGeo(center);
@@ -367,16 +423,9 @@ export function deployAnnotations(
     const rayDirY = center.clone().sub(shotCam.position).normalize().y;
     const uncertaintyM = estimateGeoUncertaintyM(range, pose.camera.fovDeg, image.height, rayDirY);
 
-    detectionLayer.spawn(
-      center,
-      Math.atan2(headingVec.x, headingVec.z),
-      ann.cls,
-      `${ann.cls === 'armored_fighting_vehicle' ? 'AFV' : ann.cls === 'light_military_vehicle' ? 'LMV' : 'AIR'}-${placed + 1}`,
-      { confidence, uncertaintyM }
-    );
-
-    detections.push({
-      detection_id: crypto.randomUUID(),
+    const detectionId = crypto.randomUUID();
+    const detection: SentinelDetection = {
+      detection_id: detectionId,
       image_id: imageId,
       class: ann.cls,
       confidence,
@@ -390,18 +439,34 @@ export function deployAnnotations(
       lat: geo.lat,
       lon: geo.lon,
       world_heading: geoFrame.compassHeadingDeg(headingVec),
-      heading_confidence: ann.headingConfidence ?? 'high', // detector's value for auto path; manual boxes are exact
+      heading_confidence: ann.headingConfidence ?? (localHeadingRad === undefined ? 'low' : 'high'),
       timestamp: pose.capturedAt,
       source_image_url: image.name,
       method: provenance?.method ?? 'manual',
       model: provenance?.model,
       detected_at: provenance?.detectedAt,
       uncertainty_m: uncertaintyM,
-    });
+    };
+    detectionLayer.spawn(
+      center,
+      localHeadingRad ?? 0,
+      ann.cls,
+      `${ann.cls === 'armored_fighting_vehicle' ? 'AFV' : ann.cls === 'light_military_vehicle' ? 'LMV' : 'AIR'}-${placed + 1}`,
+      { confidence, uncertaintyM, detectionId }
+    );
+
+    detections.push(detection);
+    projectedContacts.push(
+      Object.freeze({
+        detection,
+        worldPosition: Object.freeze({ x: center.x, y: center.y, z: center.z }),
+        ...(localHeadingRad === undefined ? {} : { localHeadingRad }),
+      })
+    );
     placed++;
   }
 
-  return { detections, placed, failed };
+  return { detections, projectedContacts: Object.freeze(projectedContacts), placed, failed };
 }
 
 /** Pings the tileset root so Google's verbatim rejection reason can be shown. */
@@ -525,6 +590,7 @@ export function createSandbox(
 
   const labels = new LabelManager(scene, tiles);
   const geoFrame = new GeoFrame(tiles, anchor);
+  const terrainSemantics = new TerrainSemanticIndex(geoFrame);
   const modelLibrary = new ModelLibrary();
   const detectionLayer = new DetectionLayer(scene, modelLibrary);
 
@@ -534,6 +600,7 @@ export function createSandbox(
       tilesLoaded = true;
       cb.onTilesLoaded();
       void labels.load(anchor.lat, anchor.lon);
+      void terrainSemantics.load(anchor.lat, anchor.lon);
     }
   };
   const onLoadError = (e: { error?: Error; url?: string | URL }): void => {
@@ -547,6 +614,12 @@ export function createSandbox(
   const projectiles = new ProjectileManager(scene, tiles.group);
   const vehicles = new VehicleManager(scene, projectiles, modelLibrary);
   const bombs = new BombManager(scene);
+  const battleSimulation = new BattleSimulationController(
+    scene,
+    tiles.group,
+    modelLibrary,
+    terrainSemantics
+  );
   vehicles.position.set(0, SANDBOX_ENGINE.VEHICLE_SPAWN_HEIGHT, 0);
 
   // --- Modes + strategist tools ---
@@ -803,6 +876,7 @@ export function createSandbox(
       cameraShake += bombs.update(dt, tiles.group);
       updateCamera(dt);
     }
+    battleSimulation.update(dt);
     projectiles.update(dt);
 
     if (mode === 'strategist') strategist.update(performance.now());
@@ -850,8 +924,7 @@ export function createSandbox(
           altM: geo.altM,
           headingDeg: geoFrame.compassHeadingDeg(forward),
           pitchDeg:
-            (Math.asin(MathUtils.clamp(forward.y, -1, 1)) *
-              SANDBOX_COMMON.DEGREES_HALF_TURN) /
+            (Math.asin(MathUtils.clamp(forward.y, -1, 1)) * SANDBOX_COMMON.DEGREES_HALF_TURN) /
             Math.PI,
         },
       },
@@ -867,11 +940,8 @@ export function createSandbox(
     pose.image = { width: canvas.width, height: canvas.height };
 
     // Render tiles only (layer 0) — no labels, markers, vehicles, or HUD sprites
-    const prevMask = camera.layers.mask;
-    camera.layers.set(0);
-    renderer.render(scene, camera);
+    renderTilesOnlyFrame(renderer, scene, camera);
     canvas.toBlob((blob) => {
-      camera.layers.mask = prevMask;
       if (!blob) return;
       downloadBlob(blob, `sentinel-shot-${stamp}.png`);
       downloadBlob(
@@ -894,6 +964,11 @@ export function createSandbox(
       image,
       provenance
     );
+  }
+
+  function battleOrigin(): Vector3 {
+    const position = vehicles.position;
+    return new Vector3(position.x, 0, position.z);
   }
 
   return {
@@ -1012,6 +1087,39 @@ export function createSandbox(
     captureShot,
     deployFromImage,
     clearDetections: () => detectionLayer.clear(),
+    startBattleScenario: (id) => battleSimulation.startScenario(id, battleOrigin()),
+    setBattlePaused: (paused) => battleSimulation.setPaused(paused),
+    setBattleTimeScale: (scale) => battleSimulation.setTimeScale(scale),
+    getBattleTimeScale: () => battleSimulation.getTimeScale(),
+    restartBattle: () => battleSimulation.restart(),
+    stopBattle: () => battleSimulation.stop(),
+    getBattleSnapshot: () => battleSimulation.getSnapshot(),
+    placeBattleUnit: (scenarioId, teamId, unitType, clientX, clientY) =>
+      battleSimulation.placeUnit(
+        scenarioId,
+        teamId,
+        unitType,
+        clientX,
+        clientY,
+        camera,
+        canvas,
+        battleOrigin()
+      ),
+    addIntelToBattle: (scenarioId, assignment, contacts) => {
+      const result = battleSimulation.importIntelContacts(
+        scenarioId,
+        assignment,
+        contacts,
+        battleOrigin()
+      );
+      detectionLayer.setBattleLinked(result.acceptedIds, true);
+      return result;
+    },
+    getBattleTerrainSummary: () => terrainSemantics.summary,
+    retryBattleTerrain: async () => {
+      await terrainSemantics.load(anchor.lat, anchor.lon);
+      return terrainSemantics.summary;
+    },
     dispose: () => {
       renderer.setAnimationLoop(null);
       window.clearInterval(attribTimer);
@@ -1030,6 +1138,8 @@ export function createSandbox(
       bombs.dispose();
       detectionLayer.dispose();
       labels.dispose();
+      battleSimulation.dispose();
+      terrainSemantics.dispose();
       modelLibrary.dispose();
       draco.dispose();
       tiles.dispose();

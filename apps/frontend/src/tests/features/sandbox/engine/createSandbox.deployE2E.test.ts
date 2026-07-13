@@ -1,7 +1,12 @@
 import { TilesRenderer } from '3d-tiles-renderer';
-import { Group, MathUtils, Mesh, MeshBasicMaterial, PlaneGeometry, Scene } from 'three';
+import { Group, MathUtils, Mesh, MeshBasicMaterial, PlaneGeometry, Scene, Vector3 } from 'three';
 
-import { type CameraPose, deployAnnotations, type ImageAnnotation } from '../../../../features/sandbox/engine/createSandbox';
+import { BattleSimulationController } from '../../../../features/sandbox/engine/battleSimulation';
+import {
+  type CameraPose,
+  deployAnnotations,
+  type ImageAnnotation,
+} from '../../../../features/sandbox/engine/createSandbox';
 import { DetectionLayer } from '../../../../features/sandbox/engine/detections';
 import { GeoFrame } from '../../../../features/sandbox/engine/geoFrame';
 import { ModelLibrary } from '../../../../features/sandbox/engine/modelCatalog';
@@ -114,7 +119,8 @@ describe('deployAnnotations — E2E smoke (capture -> detect fixture -> deploy -
 
     const geoFrame = new GeoFrame(tiles, POSE.anchor);
     const scene = new Scene();
-    const detectionLayer = new DetectionLayer(scene, new ModelLibrary());
+    const modelLibrary = new ModelLibrary();
+    const detectionLayer = new DetectionLayer(scene, modelLibrary);
 
     const result = deployAnnotations(
       { tilesGroup: tiles.group, geoFrame, detectionLayer },
@@ -128,6 +134,7 @@ describe('deployAnnotations — E2E smoke (capture -> detect fixture -> deploy -
     expect(result.failed).toBe(0);
     expect(result.placed).toBe(1);
     expect(result.detections).toHaveLength(1);
+    expect(result.projectedContacts).toHaveLength(1);
 
     const detection = result.detections[0];
     expect(detection.class).toBe('armored_fighting_vehicle');
@@ -140,11 +147,36 @@ describe('deployAnnotations — E2E smoke (capture -> detect fixture -> deploy -
     expect(detection.lat).toBeCloseTo(POSE.anchor.lat, 2);
     expect(detection.lon).toBeCloseTo(POSE.anchor.lon, 2);
     expect(detection.uncertainty_m).toBeGreaterThan(0);
+    expect(result.projectedContacts[0].detection).toBe(detection);
+    expect(result.projectedContacts[0].worldPosition).toEqual(
+      expect.objectContaining({
+        x: expect.any(Number),
+        y: expect.any(Number),
+        z: expect.any(Number),
+      })
+    );
+    const projectedHeading = result.projectedContacts[0].localHeadingRad;
+    expect(projectedHeading === undefined || Number.isFinite(projectedHeading)).toBe(true);
 
     // The render layer actually spawned something — count is the only public surface
     // DetectionLayer exposes for "did a detection actually render" without reaching into
     // Three.js internals.
     expect(detectionLayer.count).toBe(1);
+
+    const battle = new BattleSimulationController(scene, tiles.group, modelLibrary);
+    const linked = battle.importIntelContacts(
+      'combined-arms',
+      { teamId: 'red', order: 'hold' },
+      result.projectedContacts,
+      new Vector3()
+    );
+    detectionLayer.setBattleLinked(linked.acceptedIds, true);
+    expect(linked.acceptedIds).toEqual([detection.detection_id]);
+    expect(scene.getObjectByName(`battle-unit-intel-${detection.detection_id}`)).toBeDefined();
+    expect(
+      scene.getObjectByName(`sentinel-detection-model-${detection.detection_id}`)?.visible
+    ).toBe(false);
+    battle.dispose();
   });
 
   it('a ray that misses the target mesh increments failed, not a fabricated placement', () => {
@@ -164,6 +196,7 @@ describe('deployAnnotations — E2E smoke (capture -> detect fixture -> deploy -
     expect(result.placed).toBe(0);
     expect(result.failed).toBe(1);
     expect(result.detections).toHaveLength(0);
+    expect(result.projectedContacts).toHaveLength(0);
     expect(detectionLayer.count).toBe(0);
   });
 });

@@ -58,6 +58,19 @@ export class GeoFrame {
     };
   }
 
+  /** WGS84 lat/lon/alt (degrees, metres) → the recentered local scene frame. */
+  public geoToLocal(geo: GeoPosition): Vector3 {
+    this.ensure();
+    const local = new Vector3();
+    this.tiles.ellipsoid.getCartographicToPosition(
+      MathUtils.DEG2RAD * geo.lat,
+      MathUtils.DEG2RAD * geo.lon,
+      geo.altM,
+      local
+    );
+    return local.applyMatrix4(this.tiles.group.matrixWorld);
+  }
+
   /** True compass bearing (0–360°, 0 = north) of a local-frame direction. */
   public compassHeadingDeg(directionLocal: Vector3): number {
     this.ensure();

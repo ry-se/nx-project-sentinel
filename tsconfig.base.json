@@ -17,6 +17,9 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "es2022",
-    "customConditions": ["@org/source"]
+    "customConditions": ["@org/source"],
+    "paths": {
+      "@org/simulation-core": ["./packages/simulation-core/src/index.ts"]
+    }
   }
 }

@@ -1,12 +1,21 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { IntelImport } from '../../../features/sandbox/IntelImport';
-import type { CameraPose, DeployProvenance, DeployResult } from '../../../features/sandbox/engine/createSandbox';
+import type {
+  CameraPose,
+  DeployProvenance,
+  DeployResult,
+} from '../../../features/sandbox/engine/createSandbox';
+import type {
+  BattleIntelAssignment,
+  BattleIntelImportResult,
+} from '../../../features/sandbox/engine/battleSimulation';
 import { DetectClientError } from '../../../features/sandbox/intel/detectClient';
 
 vi.mock('../../../features/sandbox/intel/detectClient', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../../features/sandbox/intel/detectClient')>('../../../features/sandbox/intel/detectClient');
+  const actual = await vi.importActual<
+    typeof import('../../../features/sandbox/intel/detectClient')
+  >('../../../features/sandbox/intel/detectClient');
   return { ...actual, detect: vi.fn() };
 });
 const { detect } = await import('../../../features/sandbox/intel/detectClient');
@@ -66,6 +75,13 @@ describe('IntelImport — auto-detect wiring', () => {
       ) => DeployResult
     >();
   const onClose = vi.fn();
+  const onAddToBattle =
+    vi.fn<
+      (
+        contacts: DeployResult['projectedContacts'],
+        assignment: BattleIntelAssignment
+      ) => BattleIntelImportResult
+    >();
 
   beforeEach(() => {
     vi.stubGlobal('Image', FakeImage);
@@ -77,6 +93,7 @@ describe('IntelImport — auto-detect wiring', () => {
     );
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:fake') });
     onDeploy.mockReset();
+    onAddToBattle.mockReset();
     onClose.mockReset();
     vi.mocked(detect).mockReset();
   });
@@ -106,7 +123,7 @@ describe('IntelImport — auto-detect wiring', () => {
       model: 'fixture-model',
       latencyMs: 120,
     });
-    onDeploy.mockReturnValue({ detections: [], placed: 1, failed: 0 });
+    onDeploy.mockReturnValue({ detections: [], projectedContacts: [], placed: 1, failed: 0 });
 
     render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
     await loadImage();
@@ -153,7 +170,7 @@ describe('IntelImport — auto-detect wiring', () => {
       model: 'fixture-model',
       latencyMs: 120,
     });
-    onDeploy.mockReturnValue({ detections: [], placed: 1, failed: 0 });
+    onDeploy.mockReturnValue({ detections: [], projectedContacts: [], placed: 1, failed: 0 });
 
     render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
     await loadImage();
@@ -241,13 +258,15 @@ describe('IntelImport — auto-detect wiring', () => {
   });
 
   it('shows a loading state and disables the button while detect() is pending', async () => {
-    let resolveDetect: (value: import('../../../features/sandbox/intel/detectClient').DetectResult) => void;
+    let resolveDetect: (
+      value: import('../../../features/sandbox/intel/detectClient').DetectResult
+    ) => void;
     vi.mocked(detect).mockReturnValue(
       new Promise((resolve) => {
         resolveDetect = resolve;
       })
     );
-    onDeploy.mockReturnValue({ detections: [], placed: 0, failed: 0 });
+    onDeploy.mockReturnValue({ detections: [], projectedContacts: [], placed: 0, failed: 0 });
 
     render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
     await loadImage();
@@ -278,7 +297,7 @@ describe('IntelImport — auto-detect wiring', () => {
   });
 
   it('manual annotate flow is unaffected — still works alongside auto-detect (regression check)', async () => {
-    onDeploy.mockReturnValue({ detections: [], placed: 1, failed: 0 });
+    onDeploy.mockReturnValue({ detections: [], projectedContacts: [], placed: 1, failed: 0 });
     render(<IntelImport currentPose={POSE} onDeploy={onDeploy} onClose={onClose} />);
     await loadImage();
 
@@ -308,5 +327,77 @@ describe('IntelImport — auto-detect wiring', () => {
     const [, annotations, , provenance] = onDeploy.mock.calls[0];
     expect(annotations[0].confidence).toBeUndefined(); // manual box: no client-side confidence
     expect(provenance).toEqual({ method: 'manual' }); // W4: manual boxes carry manual provenance
+  });
+
+  it('keeps projected intel separate until explicitly assigned to a team and behavior', async () => {
+    vi.mocked(detect).mockResolvedValue({
+      annotations: [
+        {
+          id: 'vlm-0',
+          cls: 'armored_fighting_vehicle',
+          rear: [10, 20],
+          front: [10, 40],
+          halfWidthPx: 15,
+          confidence: 0.9,
+        },
+        {
+          id: 'vlm-1',
+          cls: 'light_military_vehicle',
+          rear: [50, 60],
+          front: [50, 80],
+          halfWidthPx: 10,
+          confidence: 0.7,
+        },
+      ],
+      model: 'fixture-model',
+      latencyMs: 120,
+    });
+    const projectedContacts = [
+      { detection: { detection_id: 'det-1' }, worldPosition: { x: 1, y: 0, z: 2 } },
+      { detection: { detection_id: 'det-2' }, worldPosition: { x: 3, y: 0, z: 4 } },
+    ] as unknown as DeployResult['projectedContacts'];
+    onDeploy.mockReturnValue({
+      detections: [],
+      projectedContacts,
+      placed: 2,
+      failed: 0,
+    });
+    onAddToBattle.mockReturnValue({
+      acceptedIds: ['det-1'],
+      duplicateIds: [],
+      held: [{ detectionId: 'det-2', reason: 'Mapped water blocks this ground unit.' }],
+      deploymentCount: 1,
+      snapshot: null,
+      message: 'Added 1 intel contact; 1 held for terrain safety.',
+    });
+
+    render(
+      <IntelImport
+        currentPose={POSE}
+        onDeploy={onDeploy}
+        onAddToBattle={onAddToBattle}
+        onClose={onClose}
+      />
+    );
+    await loadImage();
+    fireEvent.click(screen.getByRole('button', { name: /auto-detect/i }));
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+
+    const team = screen.getByLabelText(/battle team/i);
+    const behavior = screen.getByLabelText(/initial behavior/i);
+    expect(team).toHaveValue('red');
+    expect(behavior).toHaveValue('hold');
+    expect(onAddToBattle).not.toHaveBeenCalled();
+
+    fireEvent.change(team, { target: { value: 'blue' } });
+    fireEvent.change(behavior, { target: { value: 'pursue' } });
+    fireEvent.click(screen.getByRole('button', { name: /^add to battle$/i }));
+
+    expect(onAddToBattle).toHaveBeenCalledWith(projectedContacts, {
+      teamId: 'blue',
+      order: 'pursue',
+    });
+    expect(screen.getByText(/added 1 intel contact; 1 held/i)).toBeInTheDocument();
+    expect(screen.getByText(/det-2: mapped water blocks this ground unit/i)).toBeInTheDocument();
   });
 });

@@ -2,7 +2,10 @@
   "name": "@org/frontend",
   "version": "0.0.1",
   "private": true,
-    "scripts": {
+  "scripts": {
     "build": "vite build"
+  },
+  "dependencies": {
+    "@org/simulation-core": "^0.0.1"
   }
 }

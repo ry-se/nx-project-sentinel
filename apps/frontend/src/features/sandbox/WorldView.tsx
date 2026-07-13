@@ -1,3 +1,4 @@
+import { type BattleSnapshot, UNIT_TYPES, type UnitType } from '@org/simulation-core';
 import {
   ArrowRight,
   Ban,
@@ -24,6 +25,7 @@ import {
   Play,
   Plus,
   Radar,
+  RotateCcw,
   Ruler,
   Satellite,
   Save,
@@ -31,13 +33,23 @@ import {
   SkipForward,
   Square,
   SquareDashed,
+  Swords,
   Tag,
   Target,
   Trash2,
   Undo2,
   Waves,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type DragEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   type CameraPose,
@@ -69,6 +81,14 @@ import { type FeatureSummary, type StratTool, TOOL_HINTS } from './engine/strate
 import type { Affiliation, Echelon } from './engine/unitSymbol';
 import { type SystemId, WEAPON_SYSTEMS } from './engine/weaponSystems';
 import type { VehicleType } from './engine/vehicles';
+import {
+  BATTLE_SCENARIO_OPTIONS,
+  BATTLE_TEAM_IDS,
+  type BattlePlacementResult,
+  type BattleScenarioId,
+  type BattleTeamId,
+} from './engine/battleSimulation';
+import type { TerrainSemanticsSummary } from './engine/terrainSemantics';
 import { getLocalStorageItem, removeLocalStorageItem, setLocalStorageItem } from './safeStorage';
 import { PanelRail } from './ui/PanelRail';
 import { PanelSection } from './ui/PanelSection';
@@ -76,9 +96,90 @@ import { PanelSection } from './ui/PanelSection';
 import { SANDBOX_COMMON, SANDBOX_WORLD_VIEW } from '@/constants/sandbox';
 
 const KEY_STORAGE = 'google_tiles_key';
+const BATTLE_STATE_POLL_MS = 200;
+const FAST_BATTLE_TIME_SCALE = 4;
+const BATTLE_TIME_SCALES = [1, 2, FAST_BATTLE_TIME_SCALE] as const;
+const BATTLE_EVENT_FEED_LIMIT = 4;
+const BATTLE_DRAG_MIME = 'application/x-sentinel-battle-unit';
+
+interface BattleUnitOption {
+  readonly type: UnitType;
+  readonly label: string;
+  readonly role: string;
+  readonly Icon: LucideIcon;
+}
+
+interface BattleDragPayload {
+  readonly unitType: UnitType;
+  readonly teamId: BattleTeamId;
+}
+
+interface BattlePlacementFeedback {
+  readonly tone: 'info' | 'success' | 'error';
+  readonly message: string;
+}
+
+type BattleManualUnitCounts = Record<BattleScenarioId, number>;
+
+function emptyBattleManualUnitCounts(): BattleManualUnitCounts {
+  return { none: 0, 'armored-skirmish': 0, 'combined-arms': 0 };
+}
+
+const BATTLE_UNIT_OPTIONS: readonly BattleUnitOption[] = Object.freeze([
+  { type: 'infantry', label: 'Infantry', role: 'Dismounted element', Icon: Footprints },
+  { type: 'car', label: 'Car', role: 'Light mobility', Icon: Car },
+  { type: 'tank', label: 'Tank', role: 'Armored element', Icon: Square },
+  { type: 'jet', label: 'Jet', role: 'Air support', Icon: Plane },
+]);
+
+const BATTLE_TEAM_STYLE: Readonly<
+  Record<BattleTeamId, { readonly label: string; readonly color: string }>
+> = Object.freeze({
+  blue: Object.freeze({ label: 'Blue force', color: '#38bdf8' }),
+  red: Object.freeze({ label: 'Red force', color: '#fb7185' }),
+});
+
+function isBattleDragPayload(value: unknown): value is BattleDragPayload {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.unitType === 'string' &&
+    UNIT_TYPES.includes(candidate.unitType as UnitType) &&
+    typeof candidate.teamId === 'string' &&
+    BATTLE_TEAM_IDS.includes(candidate.teamId as BattleTeamId)
+  );
+}
+
+function readBattleDragPayload(event: DragEvent<HTMLCanvasElement>): BattleDragPayload | null {
+  const raw = event.dataTransfer.getData(BATTLE_DRAG_MIME);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isBattleDragPayload(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function feedbackFromPlacement(result: BattlePlacementResult): BattlePlacementFeedback {
+  return { tone: result.accepted ? 'success' : 'error', message: result.message };
+}
+
+function battleStatusLabel(snapshot: BattleSnapshot): string {
+  if (snapshot.status.phase === 'victory') {
+    const winner = snapshot.teams.find((team) => team.id === snapshot.status.winnerTeamId);
+    return `${winner?.name ?? 'Unknown team'} wins`;
+  }
+  if (snapshot.status.phase === 'draw') return 'Draw';
+  if (snapshot.status.phase === 'paused') return 'Paused';
+  if (snapshot.status.phase === 'running') return 'Running';
+  return 'Ready';
+}
 
 const modalComponents = {
-  IntelImport: lazy(() => import('./IntelImport').then((module) => ({ default: module.IntelImport }))),
+  IntelImport: lazy(() =>
+    import('./IntelImport').then((module) => ({ default: module.IntelImport }))
+  ),
 };
 
 function IntelImportFallback() {
@@ -188,6 +289,26 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
   const [phaseFilter, setPhaseFilterState] = useState<string>(ALL_PHASES);
   const [renamingPhaseId, setRenamingPhaseId] = useState<string | null>(null);
   const [renamePhaseDraft, setRenamePhaseDraft] = useState('');
+  const [battleScenarioId, setBattleScenarioId] = useState<BattleScenarioId>('none');
+  const [battleSnapshot, setBattleSnapshot] = useState<BattleSnapshot | null>(null);
+  const [battleTimeScale, setBattleTimeScaleState] = useState(1);
+  const [battleTeamId, setBattleTeamId] = useState<BattleTeamId>('blue');
+  const [battleTerrainSummary, setBattleTerrainSummary] = useState<TerrainSemanticsSummary | null>(
+    null
+  );
+  const [battleTerrainRetrying, setBattleTerrainRetrying] = useState(false);
+  const [battlePlacementFeedback, setBattlePlacementFeedback] =
+    useState<BattlePlacementFeedback | null>(null);
+  const [battleManualUnitCounts, setBattleManualUnitCounts] = useState<BattleManualUnitCounts>(
+    emptyBattleManualUnitCounts
+  );
+  const [draggingBattleUnit, setDraggingBattleUnit] = useState<BattleDragPayload | null>(null);
+  const [battleDropAllowed, setBattleDropAllowed] = useState<boolean | null>(null);
+
+  const battlePhase = battleSnapshot?.status.phase;
+  const battleHasActiveRun = battlePhase === 'running' || battlePhase === 'paused';
+  const battleTerrainReady = battleTerrainSummary?.status === 'ready';
+  const canRunBattle = !loading && !battleHasActiveRun;
 
   const features = useMemo<FeatureSummary[]>(
     () => sandboxRef.current?.listFeatures() ?? [],
@@ -229,6 +350,12 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     let sandbox: Sandbox | null = null;
     setLoading(true);
     setFatal(null);
+    setBattleSnapshot(null);
+    setBattleTerrainSummary(null);
+    setBattlePlacementFeedback(null);
+    setBattleManualUnitCounts(emptyBattleManualUnitCounts());
+    setDraggingBattleUnit(null);
+    setBattleDropAllowed(null);
 
     void preflightGoogleKey(apiKey).then((error) => {
       if (cancelled) return;
@@ -657,6 +784,188 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
     return () => window.clearInterval(timer);
   }, [apiKey, loading, fatal]);
 
+  useEffect(() => {
+    if (!apiKey || loading || fatal || mode !== 'strategist') return;
+    const syncBattleState = (): void => {
+      const sandbox = sandboxRef.current;
+      setBattleSnapshot(sandbox?.getBattleSnapshot?.() ?? null);
+      setBattleTerrainSummary(sandbox?.getBattleTerrainSummary?.() ?? null);
+    };
+    syncBattleState();
+    const timer = window.setInterval(syncBattleState, BATTLE_STATE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [apiKey, fatal, loading, mode]);
+
+  const startBattle = useCallback(() => {
+    const sandbox = sandboxRef.current;
+    if (!sandbox) return;
+    try {
+      sandbox.setBattleTimeScale?.(battleTimeScale);
+      const nextSnapshot = sandbox.startBattleScenario?.(battleScenarioId) ?? null;
+      setBattleSnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        setBattlePlacementFeedback({
+          tone: 'success',
+          message: `${nextSnapshot.scenarioName} started. Force laydown is now locked.`,
+        });
+      }
+    } catch (error) {
+      setBattlePlacementFeedback({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to start this battle scenario.',
+      });
+    }
+  }, [battleScenarioId, battleTimeScale]);
+
+  const toggleBattlePause = useCallback(() => {
+    const shouldPause = battleSnapshot?.status.phase === 'running';
+    setBattleSnapshot(sandboxRef.current?.setBattlePaused?.(shouldPause) ?? battleSnapshot);
+  }, [battleSnapshot]);
+
+  const restartBattle = useCallback(() => {
+    setBattleSnapshot(sandboxRef.current?.restartBattle?.() ?? null);
+  }, []);
+
+  const stopBattle = useCallback(() => {
+    sandboxRef.current?.stopBattle?.();
+    setBattleSnapshot(null);
+  }, []);
+
+  const setBattleTimeScale = useCallback((scale: number) => {
+    setBattleTimeScaleState(scale);
+    sandboxRef.current?.setBattleTimeScale?.(scale);
+  }, []);
+
+  const retryBattleTerrain = useCallback(async (): Promise<void> => {
+    const sandbox = sandboxRef.current;
+    if (!sandbox?.retryBattleTerrain) return;
+    setBattleTerrainRetrying(true);
+    try {
+      const summary = await sandbox.retryBattleTerrain();
+      setBattleTerrainSummary(summary);
+      setBattlePlacementFeedback({
+        tone: summary.status === 'ready' ? 'success' : 'info',
+        message: summary.message,
+      });
+    } finally {
+      setBattleTerrainRetrying(false);
+    }
+  }, []);
+
+  const canDeployBattleUnit = useCallback(
+    (_unitType: UnitType): boolean => {
+      if (loading || battleHasActiveRun) return false;
+      return true;
+    },
+    [battleHasActiveRun, loading]
+  );
+
+  const deploymentBlockedMessage = useCallback(
+    (_unitType: UnitType): string => {
+      if (loading) return 'Deployment held while the 3D operating area is loading.';
+      if (battleHasActiveRun) {
+        return 'Deployment is locked during a run. Stop the battle before revising the force laydown.';
+      }
+      return 'Deployment is not available at this location.';
+    },
+    [battleHasActiveRun, loading]
+  );
+
+  const beginBattleUnitDrag = useCallback(
+    (event: DragEvent<HTMLButtonElement>, unitType: UnitType): void => {
+      if (!canDeployBattleUnit(unitType)) {
+        event.preventDefault();
+        setBattlePlacementFeedback({
+          tone: 'error',
+          message: deploymentBlockedMessage(unitType),
+        });
+        return;
+      }
+      const payload: BattleDragPayload = { unitType, teamId: battleTeamId };
+      event.dataTransfer.effectAllowed = 'copy';
+      event.dataTransfer.setData(BATTLE_DRAG_MIME, JSON.stringify(payload));
+      event.dataTransfer.setData(
+        'text/plain',
+        `${BATTLE_TEAM_STYLE[battleTeamId].label} ${unitType}`
+      );
+      setDraggingBattleUnit(payload);
+      setBattleDropAllowed(null);
+      setBattlePlacementFeedback({
+        tone: 'info',
+        message: `Place ${BATTLE_TEAM_STYLE[battleTeamId].label.toLowerCase()} ${unitType} on the 3D terrain.`,
+      });
+    },
+    [battleTeamId, canDeployBattleUnit, deploymentBlockedMessage]
+  );
+
+  const finishBattleUnitDrag = useCallback((): void => {
+    setDraggingBattleUnit(null);
+    setBattleDropAllowed(null);
+  }, []);
+
+  const handleCanvasDragOver = useCallback(
+    (event: DragEvent<HTMLCanvasElement>): void => {
+      const payload = draggingBattleUnit ?? readBattleDragPayload(event);
+      if (!payload) return;
+      event.preventDefault();
+      const allowed = canDeployBattleUnit(payload.unitType);
+      event.dataTransfer.dropEffect = allowed ? 'copy' : 'none';
+      setBattleDropAllowed(allowed);
+    },
+    [canDeployBattleUnit, draggingBattleUnit]
+  );
+
+  const handleCanvasDragLeave = useCallback((): void => {
+    setBattleDropAllowed(null);
+  }, []);
+
+  const handleCanvasDrop = useCallback(
+    (event: DragEvent<HTMLCanvasElement>): void => {
+      const payload = draggingBattleUnit ?? readBattleDragPayload(event);
+      if (!payload) return;
+      event.preventDefault();
+      setDraggingBattleUnit(null);
+      setBattleDropAllowed(null);
+
+      if (!canDeployBattleUnit(payload.unitType)) {
+        setBattlePlacementFeedback({
+          tone: 'error',
+          message: deploymentBlockedMessage(payload.unitType),
+        });
+        return;
+      }
+
+      try {
+        const result = sandboxRef.current?.placeBattleUnit?.(
+          battleScenarioId,
+          payload.teamId,
+          payload.unitType,
+          event.clientX,
+          event.clientY
+        );
+        if (!result) {
+          setBattlePlacementFeedback({
+            tone: 'error',
+            message: 'The battle deployment interface is unavailable in this session.',
+          });
+          return;
+        }
+        setBattleSnapshot(result.snapshot);
+        setBattleManualUnitCounts((current) => ({
+          ...current,
+          [result.scenarioId]: result.manualUnitCount,
+        }));
+        setBattlePlacementFeedback(feedbackFromPlacement(result));
+      } catch (error) {
+        setBattlePlacementFeedback({
+          tone: 'error',
+          message: error instanceof Error ? error.message : 'Unable to place this unit.',
+        });
+      }
+    },
+    [battleScenarioId, canDeployBattleUnit, deploymentBlockedMessage, draggingBattleUnit]
+  );
+
   const copyPose = (): void => {
     const sb = sandboxRef.current;
     if (!sb) return;
@@ -680,7 +989,37 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
 
   return (
     <div className="fixed inset-0">
-      <canvas ref={canvasRef} className="block h-full w-full touch-none" />
+      <canvas
+        ref={canvasRef}
+        className="block h-full w-full touch-none"
+        onDragOver={handleCanvasDragOver}
+        onDragLeave={handleCanvasDragLeave}
+        onDrop={handleCanvasDrop}
+      />
+
+      {draggingBattleUnit && (
+        <div
+          className={`pointer-events-none fixed inset-3 z-30 flex items-center justify-center rounded-box border-2 border-dashed bg-base-300/15 transition-colors ${
+            battleDropAllowed === false
+              ? 'border-error/80'
+              : battleDropAllowed === true
+                ? 'border-primary/90'
+                : 'border-white/35'
+          }`}
+          aria-hidden="true"
+        >
+          <div className="rounded-box bg-base-100/90 px-5 py-3 text-center shadow-2xl backdrop-blur-md">
+            <div className="text-xs font-semibold uppercase tracking-widest">
+              {battleDropAllowed === false ? 'Deployment blocked' : 'Place unit on terrain'}
+            </div>
+            <div className="mt-1 text-sm text-base-content/65">
+              {BATTLE_TEAM_STYLE[draggingBattleUnit.teamId].label} ·{' '}
+              {BATTLE_UNIT_OPTIONS.find((option) => option.type === draggingBattleUnit.unitType)
+                ?.label ?? draggingBattleUnit.unitType}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Classification banner (todo 22 invariant 1) — persistent bottom marking, standard
           military marking placement, always visible in strategist mode so a plan is never
@@ -788,6 +1127,327 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
             >
               <Trash2 className="h-4 w-4" /> Clear All
             </button>
+          </PanelSection>
+
+          <PanelSection title="Battle">
+            <div className="mb-1 flex items-start gap-2 rounded-box bg-base-200/70 p-2">
+              <Swords className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div>
+                <div className="text-xs font-semibold">Autonomous battle lab</div>
+                <div className="text-[10px] leading-snug text-base-content/50">
+                  Deterministic 20 Hz tactics with restrained steering, sensing, weapons, and
+                  damage.
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-box border border-white/5 bg-base-300/45 p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/55">
+                  Terrain safety
+                </span>
+                <span
+                  className={`badge badge-xs ${
+                    battleTerrainSummary?.status === 'ready'
+                      ? 'badge-success'
+                      : battleTerrainSummary?.status === 'error'
+                        ? 'badge-error'
+                        : 'badge-warning'
+                  }`}
+                >
+                  {battleTerrainSummary?.status ?? 'loading'}
+                </span>
+              </div>
+              <p className="mt-1 text-[10px] leading-snug text-base-content/55">
+                {battleTerrainSummary?.message ?? 'Loading mapped buildings and water…'}
+              </p>
+              {(battleTerrainSummary?.buildingCount ?? 0) +
+                (battleTerrainSummary?.waterCount ?? 0) >
+                0 && (
+                <div className="mt-1 flex gap-3 font-mono text-[9px] text-base-content/45">
+                  <span>{battleTerrainSummary?.buildingCount ?? 0} buildings</span>
+                  <span>{battleTerrainSummary?.waterCount ?? 0} water areas</span>
+                </div>
+              )}
+              {battleTerrainSummary?.status !== 'ready' && (
+                <div className="mt-1 flex items-start justify-between gap-2">
+                  <p className="text-[9px] leading-snug text-warning/90">
+                    Limited mode is active. Known buildings and water remain blocked; unmapped space
+                    no longer prevents setup or simulation.
+                  </p>
+                  {battleTerrainSummary?.status === 'error' && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs h-6 shrink-0 px-2 font-normal"
+                      disabled={battleTerrainRetrying}
+                      onClick={() => void retryBattleTerrain()}
+                    >
+                      {battleTerrainRetrying ? (
+                        <span className="loading loading-spinner loading-xs" />
+                      ) : (
+                        <RotateCcw className="h-3 w-3" />
+                      )}
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-1 flex items-center justify-between px-1">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
+                Force deployment
+              </span>
+              <span className="badge badge-ghost badge-xs font-mono">
+                {battleManualUnitCounts[battleScenarioId]} placed
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1 px-1" aria-label="Deployment team">
+              {BATTLE_TEAM_IDS.map((teamId) => {
+                const selected = battleTeamId === teamId;
+                const team = BATTLE_TEAM_STYLE[teamId];
+                return (
+                  <button
+                    key={teamId}
+                    type="button"
+                    className={`btn btn-xs h-7 font-normal ${selected ? 'bg-base-300' : 'btn-ghost'}`}
+                    style={{
+                      borderColor: selected ? team.color : 'transparent',
+                      color: team.color,
+                    }}
+                    onClick={() => setBattleTeamId(teamId)}
+                    disabled={loading || battleHasActiveRun}
+                    aria-pressed={selected}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: team.color }}
+                    />
+                    {team.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-2 gap-1 px-1">
+              {BATTLE_UNIT_OPTIONS.map((unit) => {
+                const deploymentAllowed = canDeployBattleUnit(unit.type);
+                return (
+                  <button
+                    key={unit.type}
+                    type="button"
+                    draggable={deploymentAllowed}
+                    disabled={!deploymentAllowed}
+                    className="btn h-auto min-h-12 cursor-grab items-start justify-start gap-2 border-white/5 bg-base-200/70 px-2 py-2 text-left font-normal active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-35"
+                    onDragStart={(event) => beginBattleUnitDrag(event, unit.type)}
+                    onDragEnd={finishBattleUnitDrag}
+                    onClick={() =>
+                      setBattlePlacementFeedback({
+                        tone: 'info',
+                        message: `Drag ${unit.label.toLowerCase()} onto the 3D terrain to place it for ${BATTLE_TEAM_STYLE[battleTeamId].label.toLowerCase()}.`,
+                      })
+                    }
+                    title={
+                      deploymentAllowed
+                        ? `Drag to place ${BATTLE_TEAM_STYLE[battleTeamId].label.toLowerCase()} ${unit.label.toLowerCase()}`
+                        : deploymentBlockedMessage(unit.type)
+                    }
+                  >
+                    <unit.Icon
+                      className="mt-0.5 h-4 w-4 shrink-0"
+                      style={{ color: BATTLE_TEAM_STYLE[battleTeamId].color }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[10px] font-semibold">{unit.label}</span>
+                      <span className="block truncate text-[9px] text-base-content/40">
+                        {unit.role}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="px-1 text-[9px] leading-snug text-base-content/40">
+              Drag units onto clear terrain. Movement follows terrain-aware, bounded steering;
+              deployment locks when the run begins.
+            </p>
+            <p className="px-1 text-[9px] leading-snug text-base-content/40">
+              Imported detections can be linked here from Intel Import using{' '}
+              <span className="font-medium text-base-content/60">Add to battle</span>.
+            </p>
+
+            {battlePlacementFeedback && (
+              <div
+                className={`mx-1 rounded border-l-2 px-2 py-1 text-[10px] leading-snug ${
+                  battlePlacementFeedback.tone === 'success'
+                    ? 'border-success bg-success/10 text-success'
+                    : battlePlacementFeedback.tone === 'error'
+                      ? 'border-error bg-error/10 text-error'
+                      : 'border-info bg-info/10 text-info'
+                }`}
+                role={battlePlacementFeedback.tone === 'error' ? 'alert' : 'status'}
+                aria-live="polite"
+              >
+                {battlePlacementFeedback.message}
+              </div>
+            )}
+
+            <label className="flex flex-col gap-1 px-1 text-[10px] uppercase tracking-widest text-base-content/50">
+              Scenario template
+              <select
+                className="select select-bordered select-sm font-normal normal-case"
+                value={battleScenarioId}
+                onChange={(event) => setBattleScenarioId(event.target.value as BattleScenarioId)}
+                disabled={loading || battleHasActiveRun}
+              >
+                {BATTLE_SCENARIO_OPTIONS.map((scenario) => (
+                  <option key={scenario.id} value={scenario.id}>
+                    {scenario.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="px-1 pb-1 text-[10px] leading-snug text-base-content/45">
+              {BATTLE_SCENARIO_OPTIONS.find((scenario) => scenario.id === battleScenarioId)
+                ?.description ?? ''}
+            </p>
+
+            <div className="grid grid-cols-2 gap-1 px-1">
+              <button
+                className="btn btn-primary btn-sm font-normal"
+                onClick={startBattle}
+                disabled={!canRunBattle}
+                title={
+                  battleHasActiveRun
+                    ? 'A battle is already running'
+                    : loading
+                      ? 'The operating area is still loading'
+                      : battleTerrainReady
+                        ? 'Run the selected scenario with mapped terrain safety'
+                        : 'Run with limited coverage; known mapped obstacles still block units'
+                }
+              >
+                <Swords className="h-3.5 w-3.5" /> Run
+              </button>
+              <button
+                className="btn btn-ghost btn-sm font-normal"
+                onClick={toggleBattlePause}
+                disabled={
+                  battleSnapshot?.status.phase !== 'running' &&
+                  battleSnapshot?.status.phase !== 'paused'
+                }
+              >
+                {battleSnapshot?.status.phase === 'paused' ? (
+                  <Play className="h-3.5 w-3.5" />
+                ) : (
+                  <Pause className="h-3.5 w-3.5" />
+                )}
+                {battleSnapshot?.status.phase === 'paused' ? 'Resume' : 'Pause'}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm font-normal"
+                onClick={restartBattle}
+                disabled={!battleSnapshot}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Restart
+              </button>
+              <button
+                className="btn btn-ghost btn-sm font-normal text-error"
+                onClick={stopBattle}
+                disabled={!battleSnapshot}
+              >
+                <Square className="h-3.5 w-3.5" /> Stop
+              </button>
+            </div>
+
+            <div className="mt-1 flex items-center justify-between px-1">
+              <span className="text-[10px] uppercase tracking-widest text-base-content/40">
+                Speed
+              </span>
+              <div className="join">
+                {BATTLE_TIME_SCALES.map((scale) => (
+                  <button
+                    key={scale}
+                    className={`btn join-item btn-xs min-h-0 h-6 px-2 font-normal ${
+                      battleTimeScale === scale ? 'btn-primary' : 'btn-ghost'
+                    }`}
+                    onClick={() => setBattleTimeScale(scale)}
+                    aria-pressed={battleTimeScale === scale}
+                  >
+                    {scale}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {battleSnapshot ? (
+              <div className="mt-2 flex flex-col gap-2 rounded-box border border-white/5 bg-base-300/55 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`badge badge-sm ${
+                      battleSnapshot.status.phase === 'victory'
+                        ? 'badge-success'
+                        : battleSnapshot.status.phase === 'draw'
+                          ? 'badge-warning'
+                          : battleSnapshot.status.phase === 'paused'
+                            ? 'badge-ghost'
+                            : 'badge-primary'
+                    }`}
+                  >
+                    {battleStatusLabel(battleSnapshot)}
+                  </span>
+                  <span className="font-mono text-[10px] text-base-content/55">
+                    T+{battleSnapshot.timeSeconds.toFixed(1)}s · #{battleSnapshot.tick}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1">
+                  {battleSnapshot.teams.map((team) => (
+                    <div
+                      key={team.id}
+                      className="rounded border-l-2 bg-base-200/75 px-2 py-1"
+                      style={{ borderLeftColor: team.color }}
+                    >
+                      <div className="truncate text-[10px] font-semibold">{team.name}</div>
+                      <div className="font-mono text-[10px] text-base-content/55">
+                        {team.aliveUnits}/{team.totalUnits} active
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <div className="mb-1 text-[9px] uppercase tracking-widest text-base-content/35">
+                    Combat feed
+                  </div>
+                  <div className="flex flex-col gap-1" aria-live="polite">
+                    {[...battleSnapshot.events]
+                      .slice(-BATTLE_EVENT_FEED_LIMIT)
+                      .reverse()
+                      .map((event) => (
+                        <div
+                          key={event.id}
+                          className="border-l border-white/10 pl-2 text-[9px] leading-snug text-base-content/60"
+                        >
+                          <span className="mr-1 font-mono text-base-content/35">
+                            {event.timeSeconds.toFixed(1)}
+                          </span>
+                          {event.message}
+                        </div>
+                      ))}
+                    {battleSnapshot.events.length === 0 && (
+                      <div className="text-[9px] text-base-content/35">Awaiting first contact…</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="px-2 py-2 text-[10px] leading-snug text-base-content/40">
+                Deploy your own forces or choose an example, then run it. Each restart replays the
+                same seeded decisions.
+              </div>
+            )}
           </PanelSection>
 
           <PanelSection
@@ -1319,15 +1979,12 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
                   {exposureResult && (
                     <div className="px-2 pb-1 text-xs">
                       <strong>
-                        {(exposureResult.fraction * SANDBOX_COMMON.PERCENT_MULTIPLIER).toFixed(0)}
-                        %
+                        {(exposureResult.fraction * SANDBOX_COMMON.PERCENT_MULTIPLIER).toFixed(0)}%
                       </strong>{' '}
-                      of route
-                      exposed{' '}
+                      of route exposed{' '}
                       <span className="text-[9px] text-base-content/40">
                         (computed from {features.find((f) => f.id === exposureThreatId)?.name}
-                        &apos;s
-                        position,
+                        &apos;s position,
                         {exposureResult.sampleCount} samples every {ELEVATION_SAMPLE_SPACING_M}
                         m)
                       </span>
@@ -1453,16 +2110,59 @@ export function WorldView({ onModeBadgeChange, onPlanExportChange }: WorldViewPr
             onDeploy={(p, anns, img, provenance) =>
               sandboxRef.current
                 ? sandboxRef.current.deployFromImage(p, anns, img, provenance)
-                : { detections: [], placed: 0, failed: anns.length }
+                : { detections: [], projectedContacts: [], placed: 0, failed: anns.length }
             }
+            onAddToBattle={(contacts, assignment) => {
+              const result = sandboxRef.current?.addIntelToBattle(
+                battleScenarioId,
+                assignment,
+                contacts
+              );
+              if (!result) {
+                return {
+                  acceptedIds: [],
+                  duplicateIds: [],
+                  held: contacts.map((contact) => ({
+                    detectionId: contact.detection.detection_id,
+                    reason: 'Battle controller is unavailable.',
+                  })),
+                  deploymentCount: battleManualUnitCounts[battleScenarioId],
+                  snapshot: battleSnapshot,
+                  message: 'Battle controller is unavailable.',
+                };
+              }
+              setBattleSnapshot(result.snapshot);
+              setBattleManualUnitCounts((current) => ({
+                ...current,
+                [battleScenarioId]: result.deploymentCount,
+              }));
+              setBattlePlacementFeedback({
+                tone: result.acceptedIds.length > 0 ? 'success' : 'error',
+                message: result.message,
+              });
+              return result;
+            }}
             onClose={() => setShowImport(false)}
           />
         </Suspense>
       )}
 
-      {/* Attribution (required by Google ToS) */}
-      <div className="fixed bottom-1 left-2 z-40 max-w-[70vw] truncate text-[10px] text-white/75 [text-shadow:0_0_2px_#000]">
-        {attributions}
+      {/* Google imagery and OSM semantics are distinct sources with separate attribution. */}
+      <div
+        className={`fixed left-2 z-40 flex max-w-[70vw] items-center gap-1.5 truncate text-[10px] text-white/75 [text-shadow:0_0_2px_#000] ${
+          mode === 'strategist' ? 'bottom-5' : 'bottom-1'
+        }`}
+      >
+        <span className="truncate">{attributions}</span>
+        <span aria-hidden="true">·</span>
+        <a
+          className="shrink-0 underline decoration-white/40 underline-offset-2 hover:text-white"
+          href="https://www.openstreetmap.org/copyright"
+          target="_blank"
+          rel="noreferrer"
+        >
+          © OpenStreetMap contributors
+        </a>
       </div>
 
       {/* Loading */}

@@ -6,6 +6,12 @@ import type {
   DeployResult,
   ImageAnnotation,
 } from './engine/createSandbox';
+import type {
+  BattleIntelAssignment,
+  BattleIntelImportResult,
+  BattleTeamId,
+} from './engine/battleSimulation';
+import type { ProjectedIntelContact } from './engine/detections';
 import { DETECTION_CLASSES, type DetectionClass } from './detectionSchema';
 import { detect, DetectClientError } from './intel/detectClient';
 import { drawOBB } from './intel/renderDetectionBox';
@@ -39,6 +45,12 @@ interface IntelImportProps {
     image: { width: number; height: number; name: string },
     provenance?: DeployProvenance
   ): DeployResult;
+  /** Explicitly promotes successfully projected contacts into the selected battle setup.
+   * Importing intel never creates combatants until the operator invokes this action. */
+  onAddToBattle?(
+    contacts: readonly ProjectedIntelContact[],
+    assignment: BattleIntelAssignment
+  ): BattleIntelImportResult;
   onClose(): void;
 }
 
@@ -50,7 +62,7 @@ type DrawPhase =
 const CANVAS_MAX_W = 760;
 const CANVAS_MAX_H = 460;
 
-export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps) {
+export function IntelImport({ currentPose, onDeploy, onAddToBattle, onClose }: IntelImportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -67,6 +79,11 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
   const [hover, setHover] = useState<[number, number] | null>(null);
 
   const [result, setResult] = useState<DeployResult | null>(null);
+  const [battleTeamId, setBattleTeamId] = useState<BattleTeamId>('red');
+  const [battleOrder, setBattleOrder] = useState<'hold' | 'pursue'>('hold');
+  const [battleImportResult, setBattleImportResult] = useState<BattleIntelImportResult | null>(
+    null
+  );
   const [autoState, setAutoState] = useState<AutoDetectState>({ status: 'idle' });
   // Optional human-confirm gate (W4) — defaults OFF so the automated no-human-in-loop
   // path (F1) stays the default; ON routes auto-detect results through pendingReview
@@ -108,6 +125,7 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
       setAnnotations([]);
       setPhase({ step: 'idle' });
       setResult(null);
+      setBattleImportResult(null);
       setLastDetected(null);
       setPendingReview(null);
       revokeObjectUrl();
@@ -363,6 +381,19 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
     setAutoState({ status: 'idle' });
   };
 
+  const addToBattle = (): void => {
+    const contacts = result?.projectedContacts ?? [];
+    if (!onAddToBattle || contacts.length === 0) return;
+    setBattleImportResult(
+      onAddToBattle(contacts, {
+        teamId: battleTeamId,
+        order: battleOrder,
+      })
+    );
+  };
+
+  const projectedContacts = result?.projectedContacts ?? [];
+
   // ---------- render ----------
 
   return (
@@ -413,6 +444,67 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
             <pre className="max-h-64 overflow-auto rounded-lg bg-base-200 p-3 text-xs">
               {JSON.stringify(result.detections, null, 2)}
             </pre>
+            {onAddToBattle && projectedContacts.length > 0 && (
+              <section
+                className="rounded-box border border-base-300 bg-base-200/60 p-3"
+                aria-label="Battle assignment"
+              >
+                <div className="text-xs font-semibold uppercase tracking-widest text-base-content/50">
+                  Battle assignment
+                </div>
+                <p className="mt-1 text-xs text-base-content/60">
+                  Keep these as intel only, or explicitly add the projected contacts to the current
+                  battle setup.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs font-semibold">
+                    Battle team
+                    <select
+                      className="select select-bordered select-sm font-normal"
+                      value={battleTeamId}
+                      onChange={(event) => setBattleTeamId(event.target.value as BattleTeamId)}
+                    >
+                      <option value="red">Red force</option>
+                      <option value="blue">Blue force</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-semibold">
+                    Initial behavior
+                    <select
+                      className="select select-bordered select-sm font-normal"
+                      value={battleOrder}
+                      onChange={(event) => setBattleOrder(event.target.value as 'hold' | 'pursue')}
+                    >
+                      <option value="hold">Hold position</option>
+                      <option value="pursue">Pursue nearest enemy</option>
+                    </select>
+                  </label>
+                </div>
+                <button type="button" className="btn btn-primary btn-sm mt-3" onClick={addToBattle}>
+                  Add to battle
+                </button>
+
+                {battleImportResult && (
+                  <div className="alert mt-3 flex-col items-start gap-1 text-xs" role="status">
+                    <span>{battleImportResult.message}</span>
+                    <span className="text-base-content/60">
+                      {battleImportResult.acceptedIds.length} added /{' '}
+                      {battleImportResult.duplicateIds.length} already linked /{' '}
+                      {battleImportResult.held.length} held
+                    </span>
+                    {battleImportResult.held.length > 0 && (
+                      <ul className="list-disc pl-5 text-warning">
+                        {battleImportResult.held.map((held) => (
+                          <li key={held.detectionId}>
+                            {held.detectionId}: {held.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 className="btn btn-sm"
@@ -435,8 +527,8 @@ export function IntelImport({ currentPose, onDeploy, onClose }: IntelImportProps
             <div className="alert alert-warning text-sm">
               Review required before deploy — model={pendingReview.model} ·{' '}
               {pendingReview.annotations.length} detection
-              {pendingReview.annotations.length === 1 ? '' : 's'} found. Uncheck any you
-              don&apos;t want deployed.
+              {pendingReview.annotations.length === 1 ? '' : 's'} found. Uncheck any you don&apos;t
+              want deployed.
             </div>
             <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
               {pendingReview.annotations.map((a, i) => (

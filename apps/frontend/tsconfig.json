@@ -1,10 +1,10 @@
 {
   "files": [],
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [
+    {
+      "path": "../../packages/simulation-core"
+    },
     {
       "path": "./tsconfig.app.json"
     },

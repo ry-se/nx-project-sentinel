@@ -1,7 +1,11 @@
 import { Group, Vector3 } from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
 
-import { computeBearingDeg, degToMils, formatBearing } from '../../../../features/sandbox/engine/planFeature';
+import {
+  computeBearingDeg,
+  degToMils,
+  formatBearing,
+} from '../../../../features/sandbox/engine/planFeature';
 import { GeoFrame } from '../../../../features/sandbox/engine/geoFrame';
 
 /**
@@ -58,6 +62,19 @@ describe('computeBearingDeg — delegates to geoFrame.compassHeadingDeg, not a r
     const reverse = computeBearingDeg(b, a, geoFrame);
     const delta = (((forward - reverse) % 360) + 360) % 360;
     expect(Math.abs(delta - 180)).toBeLessThan(0.01);
+  });
+});
+
+describe('GeoFrame coordinate round trip', () => {
+  it('converts WGS84 to local space and back without changing the position', () => {
+    const geoFrame = new GeoFrame(bareTiles(), ANCHOR);
+    const source = { lat: 1.35125, lon: 103.80175, altM: 37.5 };
+
+    const roundTrip = geoFrame.localToGeo(geoFrame.geoToLocal(source));
+
+    expect(roundTrip.lat).toBeCloseTo(source.lat, 8);
+    expect(roundTrip.lon).toBeCloseTo(source.lon, 8);
+    expect(roundTrip.altM).toBeCloseTo(source.altM, 4);
   });
 });
 

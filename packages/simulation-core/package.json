@@ -1,0 +1,24 @@
+{
+  "name": "@org/simulation-core",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "name": "simulation-core",
+    "sourceRoot": "packages/simulation-core/src",
+    "projectType": "library",
+    "tags": [
+      "type:simulation",
+      "scope:shared"
+    ]
+  },
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  }
+}

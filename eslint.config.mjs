@@ -36,7 +36,8 @@ export default [
         project: [
           './apps/frontend/tsconfig.app.json',
           './apps/frontend/tsconfig.spec.json',
-          './apps/infra/tsconfig.json',
+          './packages/simulation-core/tsconfig.lib.json',
+          './packages/simulation-core/tsconfig.spec.json',
         ],
       },
     },
